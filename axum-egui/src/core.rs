@@ -11,13 +11,13 @@ use std::{env, fs, path::PathBuf};
 pub trait AxumEguiApp: Sized {
     /// The egui App type that this axum integration serves
     type App: eframe::App;
-    
+
     /// Creates a new instance of the egui app
     fn create_app() -> Self::App;
-    
+
     /// Returns the router that serves this app
     fn router() -> Router;
-    
+
     /// Returns the fallback handler for serving static files
     fn fallback() -> MethodRouter;
 }
@@ -44,9 +44,13 @@ impl<A: 'static> AxumEguiHandler<A> {
         // Get the file from the assets directory
         let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
         let file_path = manifest_dir.join("assets/dist").join(path);
-        
+
         if !file_path.exists() {
-            return (axum::http::StatusCode::NOT_FOUND, format!("File not found: {}", file_path.display())).into_response();
+            return (
+                axum::http::StatusCode::NOT_FOUND,
+                format!("File not found: {}", file_path.display()),
+            )
+                .into_response();
         }
 
         let contents = fs::read(&file_path).unwrap();
@@ -59,4 +63,4 @@ impl<A: 'static> AxumEguiHandler<A> {
 
         ([(axum::http::header::CONTENT_TYPE, content_type)], contents).into_response()
     }
-} 
+}

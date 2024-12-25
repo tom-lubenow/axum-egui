@@ -5,12 +5,12 @@ use tokio::net::TcpListener;
 pub mod gui;
 
 #[derive(AxumEguiApp)]
-struct MyAxumApp<T = gui::App>(PhantomData<T>);
+struct TodoApp<T = gui::App>(PhantomData<T>);
 
 #[tokio::main]
 async fn main() {
     // Create the router using our derived implementation
-    let app = MyAxumApp::<gui::App>::router();
+    let app = TodoApp::<gui::App>::router();
 
     // Bind and serve
     let addr = SocketAddr::from(([127, 0, 0, 1], 3000));
