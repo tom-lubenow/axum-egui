@@ -1,62 +1,62 @@
 use axum::{
-    http::{header, StatusCode},
     response::{IntoResponse, Response},
+    routing::{get, MethodRouter},
     Router,
 };
-use eframe::App;
-use include_dir::{Dir, File};
+use eframe;
+use std::{env, fs, path::PathBuf};
 
-/// Handler for serving an egui app through axum
-pub struct AxumEguiHandler<A>
-where
-    A: App + 'static,
-{
-    app: A,
+/// Core trait that provides the integration between axum and egui.
+/// This trait is typically derived using the `AxumEguiApp` derive macro.
+pub trait AxumEguiApp: Sized {
+    /// The egui App type that this axum integration serves
+    type App: eframe::App;
+    
+    /// Creates a new instance of the egui app
+    fn create_app() -> Self::App;
+    
+    /// Returns the router that serves this app
+    fn router() -> Router;
+    
+    /// Returns the fallback handler for serving static files
+    fn fallback() -> MethodRouter;
 }
 
-impl<A> AxumEguiHandler<A>
-where
-    A: App + 'static,
-{
-    /// Create a new handler for the given app
+pub struct AxumEguiHandler<A: 'static> {
+    _app: A, // Mark as intentionally unused with underscore
+}
+
+impl<A: 'static> AxumEguiHandler<A> {
     pub fn new(app: A) -> Self {
-        Self { app }
+        Self { _app: app }
     }
 
-    /// Create the router for serving this app
-    pub fn router(self) -> Router {
+    pub fn router(&self) -> Router {
         Router::new()
-            .fallback(Self::serve_static_file)
+            .route("/", get(Self::serve_static_file))
+            .fallback(get(Self::serve_static_file))
     }
 
-    /// Serve a static file from the embedded assets
-    async fn serve_static_file(uri: axum::http::Uri) -> Response {
+    pub async fn serve_static_file(uri: axum::http::Uri) -> Response {
         let path = uri.path().trim_start_matches('/');
         let path = if path.is_empty() { "index.html" } else { path };
 
-        match crate::assets::ASSETS.get_file(path) {
-            Some(file) => Self::serve_file(file),
-            None => (StatusCode::NOT_FOUND, "404 Not Found").into_response(),
+        // Get the file from the assets directory
+        let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        let file_path = manifest_dir.join("assets/dist").join(path);
+        
+        if !file_path.exists() {
+            return (axum::http::StatusCode::NOT_FOUND, format!("File not found: {}", file_path.display())).into_response();
         }
-    }
 
-    /// Serve a file with the appropriate content type
-    fn serve_file(file: &'static File<'static>) -> Response {
-        let content_type = match file.path().extension().and_then(|e| e.to_str()) {
-            Some("html") => "text/html; charset=utf-8",
-            Some("js") => "text/javascript; charset=utf-8",
+        let contents = fs::read(&file_path).unwrap();
+        let content_type = match path.split('.').last() {
+            Some("html") => "text/html",
+            Some("js") => "application/javascript",
             Some("wasm") => "application/wasm",
             _ => "application/octet-stream",
         };
 
-        (
-            StatusCode::OK,
-            [
-                (header::CONTENT_TYPE, content_type),
-                // Disable caching for now during development
-                (header::CACHE_CONTROL, "no-cache"),
-            ],
-            file.contents(),
-        ).into_response()
+        ([(axum::http::header::CONTENT_TYPE, content_type)], contents).into_response()
     }
 } 

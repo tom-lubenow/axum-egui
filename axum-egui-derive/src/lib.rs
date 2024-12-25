@@ -2,34 +2,29 @@ use proc_macro::TokenStream;
 use quote::quote;
 use syn::{parse_macro_input, DeriveInput};
 
-/// Derives the AxumEguiApp trait for a struct, allowing it to serve an egui app through axum.
-/// 
-/// # Example
-/// ```rust,no_run
-/// use axum_egui::AxumEguiApp;
-/// use eframe::App;
-/// 
-/// #[derive(Default)]
-/// struct MyApp;
-/// 
-/// impl App for MyApp {
-///     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
-///         // Your egui app code here
-///     }
-/// }
-/// 
-/// #[derive(AxumEguiApp)]
-/// #[app(MyApp)]
-/// struct MyAxumApp;
-/// ```
-#[proc_macro_derive(AxumEguiApp, attributes(app))]
+#[proc_macro_derive(AxumEguiApp)]
 pub fn derive_axum_egui_app(input: TokenStream) -> TokenStream {
     let input = parse_macro_input!(input as DeriveInput);
+    let struct_name = input.ident;
     
-    // TODO: Implement the actual derive macro
     let expanded = quote! {
-        // Temporary implementation
-        compile_error!("AxumEguiApp derive macro is not yet implemented");
+        impl axum_egui::AxumEguiApp for #struct_name {
+            type App = crate::gui::App;
+
+            fn create_app() -> Self::App {
+                Self::App::default()
+            }
+
+            fn router() -> axum::Router {
+                let app = Self::create_app();
+                let handler = axum_egui::AxumEguiHandler::new(app);
+                handler.router()
+            }
+
+            fn fallback() -> axum::routing::MethodRouter {
+                axum::routing::get(axum_egui::AxumEguiHandler::<Self::App>::serve_static_file)
+            }
+        }
     };
 
     TokenStream::from(expanded)

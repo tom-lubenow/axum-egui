@@ -1,17 +1,16 @@
-use axum::Router;
+use axum_egui::AxumEguiApp;
 use std::net::SocketAddr;
 use tokio::net::TcpListener;
 
-mod app;
-use app::SimpleApp;
+pub mod gui;
+
+#[derive(AxumEguiApp)]
+struct MyAxumApp;
 
 #[tokio::main]
 async fn main() {
-    // Create our handler
-    let handler = axum_egui::AxumEguiHandler::new(SimpleApp::default());
-    
-    // Create the router
-    let app = handler.router();
+    // Create the router using our derived implementation
+    let app = MyAxumApp::router();
     
     // Bind and serve
     let addr = SocketAddr::from(([127, 0, 0, 1], 3000));
