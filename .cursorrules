@@ -1,1 +1,5 @@
 Always ensure we're committing clean code with cargo fmt, cargo check, and cargo clippy -- -D warnings. If modifying any behavior, always ensure we're still passing tests with cargo test.
+
+When adding new dependencies, we almost always want to use the latest version. We should use `cargo add` to simply add the latest version or otherwise figure out the latest version and update to it.
+
+If you're running into issues with APIs from having changed from what you remember, consider cloning the repo (not into our repo, we don't want to make it a submodule) and literally reading the code and/or docs.

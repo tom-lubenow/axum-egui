@@ -1,50 +1,58 @@
 use axum::{
-    extract::{
-        ws::{WebSocket, WebSocketUpgrade},
-        State,
-    },
-    response::Response,
-    routing::{get, get_service},
+    http::{header, StatusCode},
+    response::{IntoResponse, Response},
     Router,
 };
 use eframe::App;
-use futures_util::StreamExt;
-use include_dir::Dir;
-use std::sync::Arc;
-use tower_http::services::ServeDir;
+use include_dir::{Dir, File};
 
 /// Handler for serving an egui app through axum
-pub struct AxumEguiHandler<A: App + Send + Sync + 'static> {
-    app: Arc<A>,
-    assets_dir: Dir<'static>,
+pub struct AxumEguiHandler<A>
+where
+    A: App + 'static,
+{
+    app: A,
 }
 
-impl<A: App + Send + Sync + 'static> AxumEguiHandler<A> {
-    /// Create a new handler for the given app and assets directory
-    pub fn new(app: A, assets_dir: Dir<'static>) -> Self {
-        Self {
-            app: Arc::new(app),
-            assets_dir,
-        }
+impl<A> AxumEguiHandler<A>
+where
+    A: App + 'static,
+{
+    /// Create a new handler for the given app
+    pub fn new(app: A) -> Self {
+        Self { app }
     }
 
     /// Create the router for serving this app
     pub fn router(self) -> Router {
-        let app = self.app.clone();
         Router::new()
-            .route("/ws", get(Self::handle_websocket))
-            .with_state(app)
-            .fallback_service(get_service(ServeDir::new("/")))
+            .fallback(Self::serve_static_file)
     }
 
-    /// Handle WebSocket connections
-    async fn handle_websocket(State(app): State<Arc<A>>, ws: WebSocketUpgrade) -> Response {
-        ws.on_upgrade(move |socket| Self::handle_socket(app, socket))
+    /// Serve a static file from the embedded assets
+    async fn serve_static_file(uri: axum::http::Uri) -> Response {
+        let path = uri.path().trim_start_matches('/');
+        let path = if path.is_empty() { "index.html" } else { path };
+
+        match crate::assets::ASSETS.get_file(path) {
+            Some(file) => Self::serve_file(file),
+            None => (StatusCode::NOT_FOUND, "404 Not Found").into_response(),
+        }
     }
 
-    /// Handle an individual WebSocket connection
-    async fn handle_socket(app: Arc<A>, socket: WebSocket) {
-        // TODO: Implement WebSocket handling
-        let (_tx, _rx) = socket.split();
+    /// Serve a file with the appropriate content type
+    fn serve_file(file: &'static File<'static>) -> Response {
+        let content_type = match file.path().extension().and_then(|e| e.to_str()) {
+            Some("html") => "text/html",
+            Some("js") => "application/javascript",
+            Some("wasm") => "application/wasm",
+            _ => "application/octet-stream",
+        };
+
+        (
+            StatusCode::OK,
+            [(header::CONTENT_TYPE, content_type)],
+            file.contents(),
+        ).into_response()
     }
-}
+} 

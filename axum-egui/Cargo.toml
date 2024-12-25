@@ -14,7 +14,6 @@ axum.workspace = true
 tokio.workspace = true
 tower.workspace = true
 tower-http.workspace = true
-futures-util.workspace = true
 egui.workspace = true
 eframe.workspace = true
 include_dir.workspace = true
@@ -22,5 +21,11 @@ log.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 
-[dev-dependencies]
-tokio-test = "0.4" 
+[build-dependencies]
+wasm-bindgen-cli-support = "0.2"
+tempfile = "3.8"
+include_dir = "0.7"
+
+[[example]]
+name = "simple"
+path = "examples/simple/main.rs" 
