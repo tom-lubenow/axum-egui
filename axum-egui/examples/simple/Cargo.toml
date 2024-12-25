@@ -1,0 +1,13 @@
+[package]
+name = "axum-egui-simple-example"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+path = "gui/mod.rs"
+
+[dependencies]
+eframe = { version = "0.30", default-features = false, features = ["default_fonts", "glow"] }
+
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+axum-egui = { path = "../.." } 

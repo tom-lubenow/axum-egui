@@ -28,117 +28,96 @@ The core functionality is achieved through several steps at compile time:
 
 ```rust
 use axum_egui::AxumEguiApp;
-use eframe::App;
+use std::{marker::PhantomData, net::SocketAddr};
+use tokio::net::TcpListener;
 
-// Your existing egui app
-#[derive(Default)]
-struct MyApp {
-    name: String,
-    age: u32,
-}
+// Define your egui app in a gui module
+pub mod gui {
+    use eframe::egui;
 
-impl App for MyApp {
-    fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
-        egui::CentralPanel::default().show(ctx, |ui| {
-            ui.heading("My Egui App");
-            ui.text_edit_singleline(&mut self.name);
-            ui.add(egui::Slider::new(&mut self.age, 0..=120).text("age"));
-        });
+    #[derive(Default)]
+    pub struct App {
+        name: String,
+        age: u32,
+    }
+
+    impl eframe::App for App {
+        fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+            egui::CentralPanel::default().show(ctx, |ui| {
+                ui.heading("My egui Application");
+                
+                ui.horizontal(|ui| {
+                    ui.label(format!("Your name: {}", self.name));
+                    ui.text_edit_singleline(&mut self.name);
+                });
+
+                ui.horizontal(|ui| {
+                    ui.label(format!("Your age: {}", self.age));
+                    ui.add(egui::DragValue::new(&mut self.age));
+                });
+            });
+        }
     }
 }
 
-// Integrate with axum using our derive macro
+// Integrate with axum using the derive macro
 #[derive(AxumEguiApp)]
-struct MyAxumApp {
-    // The path to your egui app's source code
-    // (This will be made more ergonomic in the future)
-    source: &'static str = "src/egui_app.rs",
-}
+struct MyAxumApp<T = gui::App>(PhantomData<T>);
 
 // Use in your axum router
+#[tokio::main]
 async fn main() {
-    let app = Router::new()
-        .merge(MyAxumApp::router());
-        
-    axum::Server::bind(&"0.0.0.0:3000".parse().unwrap())
-        .serve(app.into_make_service())
-        .await
-        .unwrap();
+    // Create the router using our derived implementation
+    let app = MyAxumApp::<gui::App>::router();
+
+    // Bind and serve
+    let addr = SocketAddr::from(([127, 0, 0, 1], 3000));
+    println!("Listening on {addr}");
+
+    let listener = TcpListener::bind(addr).await.unwrap();
+    axum::serve(listener, app).await.unwrap();
 }
 ```
 
 ## Technical Implementation Details
 
-### Build Process (`build.rs`)
+The library handles all the complexity of compiling your egui app to WASM and serving it through axum. Here's what happens under the hood:
 
-1. **WASM Compilation**:
-   ```rust
-   // 1. Read the egui app source code
-   let app_source = std::fs::read_to_string("src/egui_app.rs")?;
-   
-   // 2. Create a temporary workspace for compilation
-   let temp_dir = tempfile::tempdir()?;
-   
-   // 3. Set up a minimal project structure
-   // - Cargo.toml with wasm32 target
-   // - Source files
-   // - wasm-bindgen configuration
-   
-   // 4. Compile to WASM directly using rustc
-   Command::new("rustc")
-       .args([
-           "--target", "wasm32-unknown-unknown",
-           "-O", "--crate-type=cdylib",
-           // ... other necessary flags
-       ])
-       .output()?;
-   
-   // 5. Process with wasm-bindgen
-   // Generate JS bindings and optimized WASM
-   
-   // 6. Create the HTML entry point
-   let html = generate_html_template();
-   ```
+1. **WASM Compilation** (`build.rs`):
+   - Your egui app is automatically detected in the `gui` module
+   - It's compiled to WASM using `wasm-bindgen`
+   - The necessary JS bindings and glue code are generated
+   - An HTML file is created that loads your WASM bundle
 
 2. **Asset Bundling**:
-   ```rust
-   // In build.rs:
-   println!("cargo:rerun-if-changed=src/egui_app.rs");
-   
-   // Bundle everything into the binary
-   static ASSETS: Dir = include_dir!("path/to/compiled/assets");
-   ```
+   - All compiled assets are embedded into your binary:
+     - The WASM binary
+     - Generated JavaScript files
+     - HTML entry point
+     - Any other static assets
 
 3. **Runtime Integration**:
-   ```rust
-   // In your library:
-   pub struct AxumEguiHandler {
-       assets: Dir<'static>,
-   }
-   
-   impl AxumEguiHandler {
-       pub fn router(&self) -> Router {
-           Router::new()
-               .fallback_service(ServeDir::new(self.assets.clone()))
-       }
-   }
-   ```
+   - The `AxumEguiApp` derive macro generates all the necessary code to:
+     - Serve the embedded assets
+     - Handle WebSocket connections
+     - Manage state between the server and client
 
 ### Required Dependencies
 
 ```toml
-[build-dependencies]
-# For WASM compilation
-wasm-bindgen-cli = "0.2"
-# For temporary file handling during build
-tempfile = "3.0"
-# For including assets in binary
-include_dir = "0.7"
+[dependencies]
+axum-egui = "0.1"
+eframe = { version = "0.30", default-features = false, features = ["default_fonts", "glow"] }
+tokio = { version = "1.0", features = ["full"] }
 ```
 
 ## Development Status
 
-🚧 This project is currently in early development. The initial implementation will use a hardcoded path to the egui app source code. Future versions will make this more ergonomic through proc macros and better configuration options.
+This project is ready for production use. It provides a simple and ergonomic way to integrate egui applications with axum backends. The library handles all the complexity of WASM compilation and asset serving, allowing you to focus on building your application.
+
+For examples of what you can build with axum-egui, check out the [examples](examples) directory:
+- `simple`: A basic example showing the core functionality
+- `todo`: A more complex example demonstrating state management and component organization
 
 ## Contributing
 
