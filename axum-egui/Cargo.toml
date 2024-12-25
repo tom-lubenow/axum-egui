@@ -1,0 +1,26 @@
+[package]
+name = "axum-egui"
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+description = "Seamlessly integrate egui web applications with axum backends"
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+axum-egui-derive = { path = "../axum-egui-derive", version = "0.1.0" }
+axum.workspace = true
+tokio.workspace = true
+tower.workspace = true
+tower-http.workspace = true
+futures-util.workspace = true
+egui.workspace = true
+eframe.workspace = true
+include_dir.workspace = true
+log.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+
+[dev-dependencies]
+tokio-test = "0.4" 

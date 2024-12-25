@@ -1,0 +1,17 @@
+[package]
+name = "axum-egui-derive"
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+description = "Proc macro implementation for axum-egui"
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[lib]
+proc-macro = true
+
+[dependencies]
+proc-macro2.workspace = true
+quote.workspace = true
+syn.workspace = true 

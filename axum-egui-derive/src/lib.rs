@@ -1,31 +1,23 @@
-#![warn(clippy::all, rust_2018_idioms)]
-
 use proc_macro::TokenStream;
 use quote::quote;
 use syn::{parse_macro_input, DeriveInput};
 
-mod core;
-mod builder;
-
-pub use core::AxumEguiHandler;
-pub use builder::WasmBuilder;
-
 /// Derives the AxumEguiApp trait for a struct, allowing it to serve an egui app through axum.
-/// 
+///
 /// # Example
 /// ```rust,no_run
 /// use axum_egui::AxumEguiApp;
 /// use eframe::App;
-/// 
+///
 /// #[derive(Default)]
 /// struct MyApp;
-/// 
+///
 /// impl App for MyApp {
 ///     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
 ///         // Your egui app code here
 ///     }
 /// }
-/// 
+///
 /// #[derive(AxumEguiApp)]
 /// #[app(MyApp)]
 /// struct MyAxumApp;
@@ -33,7 +25,7 @@ pub use builder::WasmBuilder;
 #[proc_macro_derive(AxumEguiApp, attributes(app))]
 pub fn derive_axum_egui_app(input: TokenStream) -> TokenStream {
     let input = parse_macro_input!(input as DeriveInput);
-    
+
     // TODO: Implement the actual derive macro
     let expanded = quote! {
         // Temporary implementation
@@ -41,19 +33,4 @@ pub fn derive_axum_egui_app(input: TokenStream) -> TokenStream {
     };
 
     TokenStream::from(expanded)
-}
-
-/// Core trait that provides the integration between axum and egui.
-pub trait AxumEguiApp: Sized {
-    /// The egui App type that this axum integration serves
-    type App: eframe::App;
-    
-    /// Creates a new instance of the egui app
-    fn create_app() -> Self::App;
-    
-    /// Returns the router that serves this app
-    fn router() -> axum::Router;
-    
-    /// Returns the fallback handler for serving static files
-    fn fallback() -> axum::routing::MethodRouter;
 }
