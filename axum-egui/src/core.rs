@@ -43,15 +43,19 @@ where
     /// Serve a file with the appropriate content type
     fn serve_file(file: &'static File<'static>) -> Response {
         let content_type = match file.path().extension().and_then(|e| e.to_str()) {
-            Some("html") => "text/html",
-            Some("js") => "application/javascript",
+            Some("html") => "text/html; charset=utf-8",
+            Some("js") => "text/javascript; charset=utf-8",
             Some("wasm") => "application/wasm",
             _ => "application/octet-stream",
         };
 
         (
             StatusCode::OK,
-            [(header::CONTENT_TYPE, content_type)],
+            [
+                (header::CONTENT_TYPE, content_type),
+                // Disable caching for now during development
+                (header::CACHE_CONTROL, "no-cache"),
+            ],
             file.contents(),
         ).into_response()
     }

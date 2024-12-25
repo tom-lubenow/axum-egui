@@ -33,6 +33,18 @@ fn main() -> std::io::Result<()> {
     // Copy the processed files to the assets directory
     copy_assets(&wasm_dir, &assets_dir)?;
     
+    // Generate the assets module
+    let out_dir = PathBuf::from(env::var("OUT_DIR").unwrap());
+    let assets_rs = out_dir.join("assets.rs");
+    
+    let assets_dir_str = assets_dir.to_str().unwrap();
+    fs::write(assets_rs, format!(r#"
+use include_dir::{{include_dir, Dir}};
+pub static ASSETS: Dir = include_dir!("{assets_dir_str}");
+"#))?;
+    
+    println!("cargo:rerun-if-changed=assets/dist");
+    
     Ok(())
 }
 
@@ -48,11 +60,21 @@ crate-type = ["cdylib"]
 
 [dependencies]
 egui = "0.30"
-eframe = { version = "0.30", default-features = false, features = ["glow"] }
+eframe = { version = "0.30", default-features = false, features = [
+    "default_fonts",
+    "glow",
+] }
 wasm-bindgen = "0.2"
 wasm-bindgen-futures = "0.4"
-web-sys = { version = "0.3", features = ["HtmlCanvasElement"] }
+web-sys = { version = "0.3", features = [
+    "HtmlCanvasElement",
+    "Window",
+    "Document",
+    "Element",
+    "console"
+] }
 console_error_panic_hook = "0.1"
+getrandom = { version = "0.2", features = ["js"] }
 "#;
     fs::write(wasm_dir.join("Cargo.toml"), cargo_toml)?;
     
@@ -67,19 +89,24 @@ r#"use wasm_bindgen::prelude::*;
 use web_sys::HtmlCanvasElement;
 use eframe::wasm_bindgen::JsValue;
 
+// Initialize debug logging and panic hook
+#[wasm_bindgen(start)]
+pub fn init() {{
+    console_error_panic_hook::set_once();
+}}
+
 {app_code}
 
 #[wasm_bindgen]
 pub async fn start(canvas: HtmlCanvasElement) -> Result<(), JsValue> {{
-    // Make sure panics are logged using `console.error`.
-    console_error_panic_hook::set_once();
-
     let app = Box::new(SimpleApp::default());
+    
+    let web_options = eframe::WebOptions::default();
     
     eframe::WebRunner::new()
         .start(
             canvas,
-            eframe::WebOptions::default(),
+            web_options,
             Box::new(|_cc| Ok(app)),
         )
         .await
@@ -122,6 +149,7 @@ fn process_wasm_bindgen(wasm_dir: &PathBuf) -> std::io::Result<()> {
         .input_path(wasm_file)
         .web(true)
         .unwrap()
+        .omit_default_module_path(true)
         .generate(wasm_dir)
         .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e.to_string()))?;
     
@@ -144,31 +172,47 @@ fn copy_assets(wasm_dir: &PathBuf, dist_dir: &PathBuf) -> std::io::Result<()> {
 <html>
 <head>
     <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Egui App</title>
-    <script type="module">
-        import init, { start } from './egui_app.js';
-        async function run() {
-            await init();
-            const canvas = document.getElementById('egui_canvas');
-            await start(canvas);
-        }
-        run();
-    </script>
     <style>
         html, body {
             margin: 0;
             padding: 0;
             height: 100%;
             overflow: hidden;
+            background-color: #1f1f1f;
         }
         #egui_canvas {
             width: 100%;
             height: 100%;
+            display: block;
+        }
+        #loading {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            color: #888;
+            font-family: sans-serif;
         }
     </style>
 </head>
 <body>
     <canvas id="egui_canvas"></canvas>
+    <div id="loading">Loading...</div>
+    <script type="module">
+        const loadingText = document.getElementById('loading');
+        try {
+            const { default: init, start } = await import('./egui_app.js');
+            const wasm = await init('./egui_app_bg.wasm');
+            const canvas = document.getElementById('egui_canvas');
+            await start(canvas);
+            loadingText.remove();
+        } catch (error) {
+            loadingText.textContent = `Error: ${error.message}`;
+            console.error(error);
+        }
+    </script>
 </body>
 </html>"#;
     fs::write(dist_dir.join("index.html"), html)?;

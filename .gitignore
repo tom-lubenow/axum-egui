@@ -13,3 +13,8 @@ target_wasm
 .lycheecache
 
 .vscode/
+
+/target
+/axum-egui/assets/dist/
+**/*.rs.bk
+Cargo.lock
