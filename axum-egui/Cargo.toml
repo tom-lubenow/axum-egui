@@ -1,0 +1,16 @@
+[package]
+name = "axum-egui"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+description = "Seamlessly embed egui frontends in axum backends"
+
+[dependencies]
+axum = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+rust-embed = { workspace = true }
+mime_guess = { workspace = true }
+
+# Re-export server-fn
+server-fn = { workspace = true }

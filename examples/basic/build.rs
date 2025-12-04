@@ -4,19 +4,18 @@ use std::{env, fs};
 
 fn main() {
     let manifest_dir = env::var("CARGO_MANIFEST_DIR").unwrap();
-    let frontend_dir = Path::new(&manifest_dir).join("../frontend");
+    let frontend_dir = Path::new(&manifest_dir).join("frontend");
     let dist_dir = frontend_dir.join("dist");
 
     // Tell cargo to rerun if frontend sources change
-    println!("cargo:rerun-if-changed=../frontend/src");
-    println!("cargo:rerun-if-changed=../frontend/Cargo.toml");
-    println!("cargo:rerun-if-changed=../frontend/index.html");
+    println!("cargo:rerun-if-changed=frontend/src");
+    println!("cargo:rerun-if-changed=frontend/Cargo.toml");
+    println!("cargo:rerun-if-changed=frontend/index.html");
 
     // Create dist directory
     fs::create_dir_all(&dist_dir).expect("Failed to create dist directory");
 
     // Step 1: Build frontend to WASM
-    // Since frontend has its own Cargo.lock (not in workspace), this won't deadlock
     println!("cargo:warning=Building frontend WASM...");
 
     let status = Command::new("cargo")

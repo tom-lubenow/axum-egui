@@ -1,9 +1,9 @@
 [workspace]
-members = ["backend", "server-fn", "server-fn-macro"]
+members = ["axum-egui", "server-fn", "server-fn-macro", "examples/basic"]
 resolver = "2"
 
-# Note: frontend is intentionally NOT in the workspace.
-# It's a separate project so build.rs can compile it without cargo lock deadlock.
+# Note: example frontends are intentionally NOT in the workspace.
+# They're separate projects so build.rs can compile them without cargo lock deadlock.
 
 [workspace.package]
 edition = "2024"

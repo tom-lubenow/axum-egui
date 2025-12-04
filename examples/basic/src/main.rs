@@ -1,20 +1,40 @@
-//! Backend server for axum-egui example.
+//! Basic example demonstrating axum-egui features.
 //!
-//! Demonstrates the `App<T>` response wrapper for serving egui apps,
-//! and the `#[server]` macro for server functions.
+//! This example shows:
+//! - RPC server functions with `#[server]`
+//! - Request context access (headers, cookies, IP)
+//! - Custom context injection with `use_context`/`provide_context`
+//! - Typed error handling with `ServerFnError<E>`
+//! - MessagePack encoding with `#[server(msgpack)]`
+//! - SSE streaming with `#[server(sse)]`
+//! - WebSocket bidirectional communication with `#[server(ws)]`
 
-use axum::{
-    Router,
-    body::Body,
-    http::{StatusCode, Uri, header},
-    response::{Html, IntoResponse, Response},
-    routing::{get, post},
-};
+use axum::{routing::{get, post}, Router};
+use axum_egui::prelude::*;
 use rust_embed::RustEmbed;
 use serde::{Deserialize, Serialize};
-use server_fn::prelude::*;
 use std::net::SocketAddr;
 use std::time::Duration;
+
+// ============================================================================
+// Embedded Assets
+// ============================================================================
+
+#[derive(RustEmbed)]
+#[folder = "frontend/dist/"]
+struct Assets;
+
+// ============================================================================
+// App State
+// ============================================================================
+
+/// The example app state - must match the frontend's ExampleApp.
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct ExampleApp {
+    pub label: String,
+    pub value: f32,
+    pub server_message: Option<String>,
+}
 
 // ============================================================================
 // Server Functions (RPC)
@@ -35,8 +55,6 @@ pub async fn greet(name: String) -> Result<String, ServerFnError> {
 /// Server function that demonstrates request context access.
 #[server]
 pub async fn whoami() -> Result<WhoamiResponse, ServerFnError> {
-    use server_fn::prelude::request_context;
-
     let ctx = request_context();
 
     let user_agent = ctx.header("user-agent").unwrap_or("unknown").to_string();
@@ -73,8 +91,6 @@ pub struct AppConfig {
 /// Server function that demonstrates use_context for dependency injection.
 #[server]
 pub async fn get_app_info() -> Result<AppInfoResponse, ServerFnError> {
-    use server_fn::prelude::{provide_context, use_context};
-
     // Provide the config (in real app, this would come from middleware/state)
     provide_context(AppConfig {
         app_name: "axum-egui".to_string(),
@@ -207,93 +223,16 @@ pub async fn echo(incoming: impl Stream<Item = String>) -> impl Stream<Item = St
 }
 
 // ============================================================================
-// Frontend Serving
+// Main
 // ============================================================================
 
-/// Embedded frontend assets (built by build.rs).
-#[derive(RustEmbed)]
-#[folder = "../frontend/dist/"]
-struct Assets;
-
-/// The example app state - must match the frontend's ExampleApp.
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
-pub struct ExampleApp {
-    pub label: String,
-    pub value: f32,
-    pub server_message: Option<String>,
-}
-
-/// Axum response wrapper for serving egui apps with initial state.
-pub struct App<T>(pub T);
-
-impl<T: Serialize> IntoResponse for App<T> {
-    fn into_response(self) -> Response {
-        let state_json = match serde_json::to_string(&self.0) {
-            Ok(json) => json,
-            Err(e) => {
-                return Response::builder()
-                    .status(StatusCode::INTERNAL_SERVER_ERROR)
-                    .body(Body::from(format!("Failed to serialize app state: {e}")))
-                    .unwrap();
-            }
-        };
-
-        let html = match Assets::get("index.html") {
-            Some(content) => {
-                let html_str = String::from_utf8_lossy(&content.data);
-                let state_script = format!(
-                    r#"<script id="axum-egui-state" type="application/json">{}</script>"#,
-                    state_json.replace("</", "<\\/")
-                );
-                html_str.replace("<!--AXUM_EGUI_INITIAL_STATE-->", &state_script)
-            }
-            None => {
-                return Response::builder()
-                    .status(StatusCode::INTERNAL_SERVER_ERROR)
-                    .body(Body::from("Frontend assets not found."))
-                    .unwrap();
-            }
-        };
-
-        Html(html).into_response()
-    }
-}
-
 /// Handler that returns an egui app with server-provided initial state.
-async fn my_app() -> App<ExampleApp> {
-    App(ExampleApp {
+async fn my_app() -> axum_egui::App<ExampleApp, Assets> {
+    axum_egui::App::new(ExampleApp {
         label: "Hello from the server!".into(),
         value: 42.0,
         server_message: None,
     })
-}
-
-/// Handler for static assets (JS, WASM, etc).
-async fn static_handler(uri: Uri) -> impl IntoResponse {
-    let path = uri.path().trim_start_matches('/');
-
-    match Assets::get(path) {
-        Some(content) => {
-            let mime = mime_guess::from_path(path).first_or_octet_stream();
-
-            Response::builder()
-                .status(StatusCode::OK)
-                .header(header::CONTENT_TYPE, mime.as_ref())
-                .body(Body::from(content.data.to_vec()))
-                .unwrap()
-        }
-        None => match Assets::get("index.html") {
-            Some(content) => Response::builder()
-                .status(StatusCode::OK)
-                .header(header::CONTENT_TYPE, "text/html")
-                .body(Body::from(content.data.to_vec()))
-                .unwrap(),
-            None => Response::builder()
-                .status(StatusCode::NOT_FOUND)
-                .body(Body::from("404 Not Found"))
-                .unwrap(),
-        },
-    }
 }
 
 #[tokio::main]
@@ -302,31 +241,34 @@ async fn main() {
 
     let app = Router::new()
         .route("/", get(my_app))
-        // RPC routes (generated by #[server] macro)
+        // RPC routes
         .route("/api/add", post(add))
         .route("/api/greet", post(greet))
         .route("/api/whoami", post(whoami))
         .route("/api/app_info", post(get_app_info))
         .route("/api/divide", post(divide))
-        // MessagePack routes (generated by #[server(msgpack)] macro)
+        // MessagePack routes
         .route("/api/multiply_msgpack", post(multiply_msgpack))
-        // SSE routes (generated by #[server(sse)] macro)
+        // SSE routes
         .route("/api/counter", get(counter))
         .route("/api/tick_stream", get(tick_stream))
-        // WebSocket routes (generated by #[server(ws)] macro)
+        // WebSocket routes
         .route("/api/echo", get(echo))
         // Static assets
-        .fallback(static_handler);
+        .fallback(axum_egui::static_handler::<Assets>);
 
     let addr = SocketAddr::from(([127, 0, 0, 1], 3000));
     println!("Server running on http://{addr}");
     println!("API endpoints:");
-    println!("  POST /api/add         - Add two numbers");
-    println!("  POST /api/greet       - Get a greeting");
-    println!("  POST /api/whoami      - Get request context info");
-    println!("  GET  /api/counter     - SSE counter stream");
-    println!("  GET  /api/tick_stream - SSE tick events");
-    println!("  WS   /api/echo        - WebSocket echo");
+    println!("  POST /api/add             - Add two numbers");
+    println!("  POST /api/greet           - Get a greeting");
+    println!("  POST /api/whoami          - Get request context info");
+    println!("  POST /api/app_info        - Get app info (context example)");
+    println!("  POST /api/divide          - Divide with typed errors");
+    println!("  POST /api/multiply_msgpack - Multiply (MessagePack)");
+    println!("  GET  /api/counter         - SSE counter stream");
+    println!("  GET  /api/tick_stream     - SSE tick events");
+    println!("  WS   /api/echo            - WebSocket echo");
 
     let listener = tokio::net::TcpListener::bind(addr).await.unwrap();
     axum::serve(listener, app).await.unwrap();

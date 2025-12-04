@@ -19,17 +19,17 @@ jobs:
       - name: Check formatting (workspace)
         run: nix develop --command cargo fmt --all -- --check
 
-      - name: Check formatting (frontend)
-        run: cd frontend && nix develop ..# --command cargo fmt -- --check
+      - name: Check formatting (example frontends)
+        run: cd examples/basic/frontend && nix develop ../../..# --command cargo fmt -- --check
 
       - name: Run clippy (workspace)
         run: nix develop --command cargo clippy --workspace --all-features -- -D warnings
 
-      - name: Run clippy (frontend)
-        run: cd frontend && nix develop ..# --command cargo clippy --target wasm32-unknown-unknown -- -D warnings
+      - name: Run clippy (example frontends)
+        run: cd examples/basic/frontend && nix develop ../../..# --command cargo clippy --target wasm32-unknown-unknown -- -D warnings
 
       - name: Check (workspace)
         run: nix develop --command cargo check --workspace --all-features
 
-      - name: Check (frontend wasm32)
-        run: cd frontend && nix develop ..# --command cargo check --target wasm32-unknown-unknown
+      - name: Check (example frontends wasm32)
+        run: cd examples/basic/frontend && nix develop ../../..# --command cargo check --target wasm32-unknown-unknown
