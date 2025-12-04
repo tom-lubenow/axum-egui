@@ -29,6 +29,15 @@ pub async fn counter() -> impl Stream<Item = i32> {
 }
 
 // ============================================================================
+// Server Functions - WebSocket (same signatures as backend)
+// ============================================================================
+
+#[server(ws)]
+pub async fn echo(incoming: impl Stream<Item = String>) -> impl Stream<Item = String> {
+    unreachable!()
+}
+
+// ============================================================================
 // App State
 // ============================================================================
 
@@ -59,6 +68,15 @@ pub struct ExampleApp {
     counter_value: Option<i32>,
     #[serde(skip)]
     counter_connected: bool,
+    // WebSocket state
+    #[serde(skip)]
+    ws_echo: Option<WsStream<String, String>>,
+    #[serde(skip)]
+    ws_input: String,
+    #[serde(skip)]
+    ws_messages: Vec<String>,
+    #[serde(skip)]
+    ws_connected: bool,
 }
 
 impl Default for ExampleApp {
@@ -74,6 +92,10 @@ impl Default for ExampleApp {
             counter_stream: None,
             counter_value: None,
             counter_connected: false,
+            ws_echo: None,
+            ws_input: String::new(),
+            ws_messages: Vec::new(),
+            ws_connected: false,
         }
     }
 }
@@ -115,6 +137,31 @@ impl ExampleApp {
         self.counter_connected = false;
     }
 
+    /// Connect the WebSocket echo.
+    fn connect_ws(&mut self) {
+        if self.ws_echo.is_none() {
+            self.ws_echo = Some(echo());
+            self.ws_connected = false;
+        }
+    }
+
+    /// Disconnect the WebSocket.
+    fn disconnect_ws(&mut self) {
+        self.ws_echo = None;
+        self.ws_connected = false;
+    }
+
+    /// Send a message through the WebSocket.
+    fn send_ws(&mut self) {
+        if let Some(ws) = &self.ws_echo {
+            if !self.ws_input.is_empty() {
+                ws.send(self.ws_input.clone());
+                self.ws_messages.push(format!("> {}", self.ws_input));
+                self.ws_input.clear();
+            }
+        }
+    }
+
     /// Process any pending API responses.
     fn process_responses(&mut self) {
         if let Some(rx) = &self.response_rx {
@@ -144,6 +191,19 @@ impl ExampleApp {
                 self.counter_value = Some(value);
             }
         }
+
+        // Process WebSocket events
+        if let Some(ws) = &mut self.ws_echo {
+            self.ws_connected = ws.is_connected();
+
+            for msg in ws.try_iter() {
+                self.ws_messages.push(format!("< {}", msg));
+                // Keep only last 20 messages
+                if self.ws_messages.len() > 20 {
+                    self.ws_messages.remove(0);
+                }
+            }
+        }
     }
 }
 
@@ -152,8 +212,8 @@ impl eframe::App for ExampleApp {
         // Process any pending API responses
         self.process_responses();
 
-        // Request continuous repaints while SSE is active
-        if self.counter_stream.is_some() {
+        // Request continuous repaints while SSE or WebSocket is active
+        if self.counter_stream.is_some() || self.ws_echo.is_some() {
             ctx.request_repaint();
         }
 
@@ -225,6 +285,54 @@ impl eframe::App for ExampleApp {
                     ui.label(format!("Counter: {value}"));
                     // Visual progress bar
                     ui.add(egui::ProgressBar::new(value as f32 / 100.0).text(format!("{value}/100")));
+                }
+            });
+
+            ui.add_space(10.0);
+
+            // WebSocket Section
+            ui.group(|ui| {
+                ui.label("WebSocket Echo (Bidirectional)");
+
+                ui.horizontal(|ui| {
+                    let is_connected = self.ws_echo.is_some();
+
+                    if !is_connected {
+                        if ui.button("Connect").clicked() {
+                            self.connect_ws();
+                        }
+                    } else {
+                        if ui.button("Disconnect").clicked() {
+                            self.disconnect_ws();
+                        }
+                    }
+
+                    // Show connection status
+                    if is_connected {
+                        let status = if self.ws_connected {
+                            "Connected"
+                        } else {
+                            "Connecting..."
+                        };
+                        ui.label(format!("Status: {status}"));
+                    }
+                });
+
+                // Message input and send
+                if self.ws_echo.is_some() {
+                    ui.horizontal(|ui| {
+                        let response = ui.text_edit_singleline(&mut self.ws_input);
+                        if ui.button("Send").clicked() || (response.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter))) {
+                            self.send_ws();
+                        }
+                    });
+
+                    // Message log
+                    egui::ScrollArea::vertical().max_height(100.0).show(ui, |ui| {
+                        for msg in &self.ws_messages {
+                            ui.monospace(msg);
+                        }
+                    });
                 }
             });
 

@@ -34,12 +34,16 @@ enum ServerMode {
     Rpc,
     /// Server-Sent Events streaming
     Sse,
+    /// WebSocket bidirectional streaming
+    Ws,
 }
 
 /// Parse the attribute to determine the mode
 fn parse_mode(attr: TokenStream) -> ServerMode {
     let attr_str = attr.to_string();
-    if attr_str.contains("sse") {
+    if attr_str.contains("ws") {
+        ServerMode::Ws
+    } else if attr_str.contains("sse") {
         ServerMode::Sse
     } else {
         ServerMode::Rpc
@@ -51,7 +55,8 @@ fn parse_mode(attr: TokenStream) -> ServerMode {
 /// # Modes
 ///
 /// - `#[server]` - Standard RPC (request/response)
-/// - `#[server(sse)]` - Server-Sent Events (streaming)
+/// - `#[server(sse)]` - Server-Sent Events (streaming from server)
+/// - `#[server(ws)]` - WebSocket (bidirectional streaming)
 #[proc_macro_attribute]
 pub fn server(attr: TokenStream, item: TokenStream) -> TokenStream {
     let mode = parse_mode(attr);
@@ -60,6 +65,7 @@ pub fn server(attr: TokenStream, item: TokenStream) -> TokenStream {
     match mode {
         ServerMode::Rpc => generate_rpc(input),
         ServerMode::Sse => generate_sse(input),
+        ServerMode::Ws => generate_ws(input),
     }
 }
 
@@ -354,4 +360,117 @@ fn extract_stream_item_type(ty: &Type) -> proc_macro2::TokenStream {
     }
     // Fallback
     quote! { () }
+}
+
+/// Generate code for WebSocket mode
+///
+/// Expected signature:
+/// ```ignore
+/// #[server(ws)]
+/// pub async fn echo(incoming: impl Stream<Item = String>) -> impl Stream<Item = String> {
+///     incoming.map(|msg| format!("Echo: {}", msg))
+/// }
+/// ```
+fn generate_ws(input: ItemFn) -> TokenStream {
+    let fn_name = &input.sig.ident;
+    let fn_name_str = fn_name.to_string();
+    let endpoint = format!("/api/{}", fn_name_str);
+
+    let vis = &input.vis;
+    let body = &input.block;
+
+    // Extract the incoming stream parameter
+    // We expect exactly one parameter: `incoming: impl Stream<Item = T>`
+    let params: Vec<_> = input
+        .sig
+        .inputs
+        .iter()
+        .filter_map(|arg| {
+            if let FnArg::Typed(pat_type) = arg {
+                if let Pat::Ident(pat_ident) = &*pat_type.pat {
+                    let name = &pat_ident.ident;
+                    let ty = &*pat_type.ty;
+                    return Some((name.clone(), ty.clone()));
+                }
+            }
+            None
+        })
+        .collect();
+
+    // Extract the input type from the first parameter (impl Stream<Item = In>)
+    let in_type = if let Some((_, ty)) = params.first() {
+        extract_stream_item_type(ty)
+    } else {
+        quote! { () }
+    };
+
+    // Extract the output type from return type (impl Stream<Item = Out>)
+    let out_type = match &input.sig.output {
+        ReturnType::Type(_, ty) => extract_stream_item_type(ty),
+        ReturnType::Default => quote! { () },
+    };
+
+    // Get the incoming stream parameter name (usually "incoming")
+    let incoming_name = if let Some((name, _)) = params.first() {
+        quote! { #name }
+    } else {
+        quote! { _incoming }
+    };
+
+    // Generate server-side code (non-WASM)
+    let server_code = quote! {
+        #[cfg(not(target_arch = "wasm32"))]
+        #vis async fn #fn_name(
+            ws: axum::extract::ws::WebSocketUpgrade,
+        ) -> impl axum::response::IntoResponse {
+            ws.on_upgrade(move |socket| async move {
+                use server_fn::prelude::futures::{StreamExt, SinkExt};
+
+                let (mut ws_tx, ws_rx) = socket.split();
+
+                // Create a stream of parsed incoming messages
+                let #incoming_name = ws_rx.filter_map(|result| async move {
+                    match result {
+                        Ok(axum::extract::ws::Message::Text(text)) => {
+                            serde_json::from_str::<#in_type>(&text).ok()
+                        }
+                        Ok(axum::extract::ws::Message::Binary(bytes)) => {
+                            serde_json::from_slice::<#in_type>(&bytes).ok()
+                        }
+                        _ => None,
+                    }
+                });
+
+                // The user's stream transformation
+                let outgoing: std::pin::Pin<Box<dyn server_fn::prelude::Stream<Item = #out_type> + Send>> =
+                    Box::pin(#body);
+
+                // Send outgoing messages
+                futures::pin_mut!(outgoing);
+                while let Some(msg) = outgoing.next().await {
+                    if let Ok(json) = serde_json::to_string(&msg) {
+                        if ws_tx.send(axum::extract::ws::Message::Text(json.into())).await.is_err() {
+                            break;
+                        }
+                    }
+                }
+            })
+        }
+    };
+
+    // Generate client-side code (WASM)
+    // Returns WsStream<In, Out> that connects to the endpoint
+    let client_code = quote! {
+        #[cfg(target_arch = "wasm32")]
+        #vis fn #fn_name() -> server_fn::ws::WsStream<#in_type, #out_type> {
+            server_fn::ws::WsStream::connect(#endpoint)
+        }
+    };
+
+    let expanded = quote! {
+        #server_code
+        #client_code
+    };
+
+    TokenStream::from(expanded)
 }

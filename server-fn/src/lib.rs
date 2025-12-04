@@ -42,6 +42,7 @@
 //! ```
 
 pub mod sse;
+pub mod ws;
 
 pub use server_fn_macro::server;
 
@@ -88,6 +89,13 @@ pub mod prelude {
 
     #[cfg(not(target_arch = "wasm32"))]
     pub use super::sse::into_sse_response;
+
+    // WebSocket types
+    #[cfg(target_arch = "wasm32")]
+    pub use super::ws::{WsConnectionState, WsStream};
+
+    #[cfg(not(target_arch = "wasm32"))]
+    pub use super::ws::{ws_upgrade, handle_socket, WsHandler};
 
     #[cfg(not(target_arch = "wasm32"))]
     pub use axum;

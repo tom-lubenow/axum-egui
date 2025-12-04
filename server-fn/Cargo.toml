@@ -15,7 +15,7 @@ futures = "0.3"
 
 # Server-side deps (non-WASM)
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
-axum = "0.8"
+axum = { version = "0.8", features = ["ws"] }
 tokio = { version = "1", features = ["sync"] }
 tokio-stream = "0.1"
 async-stream = "0.3"
@@ -23,7 +23,7 @@ tracing = "0.1"
 
 # Client-side deps (WASM)
 [target.'cfg(target_arch = "wasm32")'.dependencies]
-gloo-net = { version = "0.6", features = ["eventsource"] }
+gloo-net = { version = "0.6", features = ["eventsource", "websocket"] }
 gloo-timers = { version = "0.3", features = ["futures"] }
 wasm-bindgen = "0.2"
 wasm-bindgen-futures = "0.4"
