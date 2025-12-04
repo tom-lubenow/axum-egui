@@ -103,10 +103,16 @@ fn generate_rpc(input: ItemFn) -> TokenStream {
     let param_names: Vec<_> = params.iter().map(|(name, _)| name).collect();
     let param_types: Vec<_> = params.iter().map(|(_, ty)| ty).collect();
 
-    // Extract return type (expecting Result<T, ServerFnError>)
+    // Extract return type (expecting Result<T, ServerFnError<E>>)
     let return_type = match &input.sig.output {
         ReturnType::Type(_, ty) => extract_result_ok_type(ty),
         ReturnType::Default => quote! { () },
+    };
+
+    // Extract error type (expecting Result<T, ServerFnError<E>>)
+    let error_type = match &input.sig.output {
+        ReturnType::Type(_, ty) => extract_result_err_type(ty),
+        ReturnType::Default => quote! { ServerFnError },
     };
 
     // Generate server-side code (non-WASM)
@@ -117,7 +123,9 @@ fn generate_rpc(input: ItemFn) -> TokenStream {
             headers: axum::http::HeaderMap,
             uri: axum::http::Uri,
             axum::Json(req): axum::Json<#request_name>,
-        ) -> Result<axum::Json<#response_name>, axum::http::StatusCode> {
+        ) -> axum::response::Response {
+            use axum::response::IntoResponse;
+
             #(let #param_names: #param_types = req.#param_names;)*
 
             // Build request context (IP is extracted from headers like X-Forwarded-For)
@@ -126,15 +134,23 @@ fn generate_rpc(input: ItemFn) -> TokenStream {
             let ctx = server_fn::context::RequestContext::from_parts(headers, None, path, query);
 
             // Run the user's function body with full context available
-            let result: Result<#return_type, ServerFnError> = server_fn::context::with_full_context(ctx, async {
+            let result: Result<#return_type, #error_type> = server_fn::context::with_full_context(ctx, async {
                 (|| async #body)().await
             }).await;
 
             match result {
-                Ok(value) => Ok(axum::Json(#response_name(value))),
+                Ok(value) => axum::Json(#response_name(value)).into_response(),
                 Err(e) => {
                     tracing::error!("Server function error: {:?}", e);
-                    Err(axum::http::StatusCode::INTERNAL_SERVER_ERROR)
+                    // Serialize error as JSON with 400 status
+                    let error_json = serde_json::to_string(&e).unwrap_or_else(|_| {
+                        r#"{"type":"Custom","data":"Serialization failed"}"#.to_string()
+                    });
+                    (
+                        axum::http::StatusCode::BAD_REQUEST,
+                        [(axum::http::header::CONTENT_TYPE, "application/json")],
+                        error_json,
+                    ).into_response()
                 }
             }
         }
@@ -143,7 +159,7 @@ fn generate_rpc(input: ItemFn) -> TokenStream {
     // Generate client-side code (WASM)
     let client_code = quote! {
         #[cfg(target_arch = "wasm32")]
-        #vis async fn #fn_name(#(#param_names: #param_types),*) -> Result<#return_type, ServerFnError> {
+        #vis async fn #fn_name(#(#param_names: #param_types),*) -> Result<#return_type, #error_type> {
             let req = #request_name { #(#param_names),* };
 
             let resp = gloo_net::http::Request::post(#endpoint)
@@ -154,7 +170,16 @@ fn generate_rpc(input: ItemFn) -> TokenStream {
                 .map_err(|e| ServerFnError::Request(e.to_string()))?;
 
             if !resp.ok() {
-                return Err(ServerFnError::ServerError(resp.status()));
+                let status = resp.status();
+                // Try to parse error as JSON
+                let error_text = resp.text().await
+                    .map_err(|e| ServerFnError::Deserialization(e.to_string()))?;
+
+                // Try to deserialize as the typed error
+                match serde_json::from_str::<#error_type>(&error_text) {
+                    Ok(err) => return Err(err),
+                    Err(_) => return Err(ServerFnError::ServerError(status)),
+                }
             }
 
             let data: #response_name = resp.json().await
@@ -358,6 +383,26 @@ fn extract_result_ok_type(ty: &Type) -> proc_macro2::TokenStream {
     }
     // Fallback: return the whole type
     quote! { #ty }
+}
+
+/// Extract the Error type from Result<T, E>
+fn extract_result_err_type(ty: &Type) -> proc_macro2::TokenStream {
+    if let Type::Path(type_path) = ty {
+        if let Some(segment) = type_path.path.segments.last() {
+            if segment.ident == "Result" {
+                if let syn::PathArguments::AngleBracketed(args) = &segment.arguments {
+                    // Get the second type argument (the error type)
+                    let mut iter = args.args.iter();
+                    iter.next(); // Skip the Ok type
+                    if let Some(syn::GenericArgument::Type(err_type)) = iter.next() {
+                        return quote! { #err_type };
+                    }
+                }
+            }
+        }
+    }
+    // Fallback: return ServerFnError
+    quote! { ServerFnError }
 }
 
 /// Extract the Item type from `impl Stream<Item = T>`

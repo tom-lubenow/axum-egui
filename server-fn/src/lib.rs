@@ -63,8 +63,44 @@ pub mod ws;
 pub use server_fn_macro::server;
 
 /// Error type for server functions.
-#[derive(Debug, Clone, thiserror::Error)]
-pub enum ServerFnError {
+///
+/// This enum provides typed error handling that works across the server/client boundary.
+/// Custom application errors can be serialized and sent to the client.
+///
+/// # Example: Custom Error Types
+///
+/// ```ignore
+/// use server_fn::prelude::*;
+///
+/// #[derive(Debug, Clone, Serialize, Deserialize)]
+/// pub enum MyError {
+///     NotFound { id: i32 },
+///     Unauthorized,
+///     ValidationFailed { field: String, message: String },
+/// }
+///
+/// #[server]
+/// pub async fn get_user(id: i32) -> Result<User, ServerFnError<MyError>> {
+///     if id < 0 {
+///         return Err(ServerFnError::app_error(MyError::ValidationFailed {
+///             field: "id".into(),
+///             message: "ID must be positive".into(),
+///         }));
+///     }
+///     // ...
+/// }
+///
+/// // On the client:
+/// match get_user(-1).await {
+///     Err(ServerFnError::AppError(MyError::ValidationFailed { field, message })) => {
+///         // Handle validation error
+///     }
+///     // ...
+/// }
+/// ```
+#[derive(Debug, Clone, thiserror::Error, serde::Serialize, serde::Deserialize)]
+#[serde(tag = "type", content = "data")]
+pub enum ServerFnError<E = ()> {
     #[error("Serialization error: {0}")]
     Serialization(String),
 
@@ -79,10 +115,50 @@ pub enum ServerFnError {
 
     #[error("Custom error: {0}")]
     Custom(String),
+
+    #[error("Application error")]
+    AppError(E),
+}
+
+impl<E> ServerFnError<E> {
+    /// Create an application-level error.
+    ///
+    /// This wraps a custom error type that will be serialized and sent to the client.
+    pub fn app_error(error: E) -> Self {
+        ServerFnError::AppError(error)
+    }
+}
+
+impl ServerFnError<()> {
+    /// Convert a unit-typed error to any other error type.
+    ///
+    /// This is useful for error propagation with `?`.
+    pub fn into_any<E>(self) -> ServerFnError<E> {
+        match self {
+            ServerFnError::Serialization(s) => ServerFnError::Serialization(s),
+            ServerFnError::Deserialization(s) => ServerFnError::Deserialization(s),
+            ServerFnError::Request(s) => ServerFnError::Request(s),
+            ServerFnError::ServerError(s) => ServerFnError::ServerError(s),
+            ServerFnError::Custom(s) => ServerFnError::Custom(s),
+            ServerFnError::AppError(()) => ServerFnError::Custom("unknown error".to_string()),
+        }
+    }
+}
+
+impl<E> From<String> for ServerFnError<E> {
+    fn from(s: String) -> Self {
+        ServerFnError::Custom(s)
+    }
+}
+
+impl<E> From<&str> for ServerFnError<E> {
+    fn from(s: &str) -> Self {
+        ServerFnError::Custom(s.to_string())
+    }
 }
 
 #[cfg(target_arch = "wasm32")]
-impl From<gloo_net::Error> for ServerFnError {
+impl<E> From<gloo_net::Error> for ServerFnError<E> {
     fn from(e: gloo_net::Error) -> Self {
         ServerFnError::Request(e.to_string())
     }
