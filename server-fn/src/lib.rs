@@ -100,8 +100,11 @@ pub mod prelude {
     // Request context
     pub use super::context::{request_context, try_request_context, RequestContext};
 
+    // Custom context (extractors)
+    pub use super::context::{use_context, try_use_context};
+
     #[cfg(not(target_arch = "wasm32"))]
-    pub use super::context::with_context;
+    pub use super::context::{provide_context, with_context, with_full_context};
 
     // SSE types
     pub use super::sse::ReconnectConfig;

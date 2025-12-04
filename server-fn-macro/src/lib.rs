@@ -125,8 +125,8 @@ fn generate_rpc(input: ItemFn) -> TokenStream {
             let query = uri.query().map(|s| s.to_string());
             let ctx = server_fn::context::RequestContext::from_parts(headers, None, path, query);
 
-            // Run the user's function body with context available
-            let result: Result<#return_type, ServerFnError> = server_fn::context::with_context(ctx, async {
+            // Run the user's function body with full context available
+            let result: Result<#return_type, ServerFnError> = server_fn::context::with_full_context(ctx, async {
                 (|| async #body)().await
             }).await;
 
