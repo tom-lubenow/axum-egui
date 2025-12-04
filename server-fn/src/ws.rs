@@ -26,9 +26,9 @@ pub use crate::sse::ReconnectConfig;
 #[cfg(target_arch = "wasm32")]
 mod client {
     use super::*;
-    use gloo_net::websocket::{futures::WebSocket, Message};
+    use gloo_net::websocket::{Message, futures::WebSocket};
     use std::marker::PhantomData;
-    use std::sync::mpsc::{channel, Receiver, Sender, TryRecvError};
+    use std::sync::mpsc::{Receiver, Sender, TryRecvError, channel};
     use wasm_bindgen_futures::spawn_local;
 
     /// Connection state for WebSocket stream.
@@ -90,7 +90,8 @@ mod client {
 
             // Spawn the connection manager
             spawn_local(async move {
-                connection_loop::<Send, Recv>(url, config, outgoing_rx, incoming_tx, state_tx).await;
+                connection_loop::<Send, Recv>(url, config, outgoing_rx, incoming_tx, state_tx)
+                    .await;
             });
 
             Self {
@@ -234,7 +235,7 @@ mod client {
                 }
 
                 // Wait for next message with timeout using select
-                use futures::future::{select, Either};
+                use futures::future::{Either, select};
                 let recv_future = Box::pin(ws_rx.next());
                 let timeout_future = Box::pin(gloo_timers::future::TimeoutFuture::new(50));
 
@@ -315,7 +316,7 @@ mod server {
         extract::ws::{Message, WebSocket, WebSocketUpgrade},
         response::Response,
     };
-    use futures::{Stream, StreamExt, SinkExt};
+    use futures::{SinkExt, Stream, StreamExt};
     use std::future::Future;
 
     /// Trait for WebSocket handlers that transform incoming messages to outgoing messages.
@@ -373,12 +374,8 @@ mod server {
         // Create a stream of parsed incoming messages
         let incoming = ws_rx.filter_map(|result| async move {
             match result {
-                Ok(Message::Text(text)) => {
-                    serde_json::from_str::<In>(&text).ok()
-                }
-                Ok(Message::Binary(bytes)) => {
-                    serde_json::from_slice::<In>(&bytes).ok()
-                }
+                Ok(Message::Text(text)) => serde_json::from_str::<In>(&text).ok(),
+                Ok(Message::Binary(bytes)) => serde_json::from_slice::<In>(&bytes).ok(),
                 _ => None,
             }
         });

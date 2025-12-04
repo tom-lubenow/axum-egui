@@ -178,10 +178,10 @@ pub mod prelude {
     pub use rmp_serde;
 
     // Request context
-    pub use super::context::{request_context, try_request_context, RequestContext};
+    pub use super::context::{RequestContext, request_context, try_request_context};
 
     // Custom context (extractors)
-    pub use super::context::{use_context, try_use_context};
+    pub use super::context::{try_use_context, use_context};
 
     #[cfg(not(target_arch = "wasm32"))]
     pub use super::context::{provide_context, with_context, with_full_context};
@@ -200,7 +200,7 @@ pub mod prelude {
     pub use super::ws::{WsConnectionState, WsStream};
 
     #[cfg(not(target_arch = "wasm32"))]
-    pub use super::ws::{ws_upgrade, handle_socket, WsHandler};
+    pub use super::ws::{WsHandler, handle_socket, ws_upgrade};
 
     #[cfg(not(target_arch = "wasm32"))]
     pub use axum;

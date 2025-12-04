@@ -2,7 +2,7 @@
 
 use eframe::wasm_bindgen::{self, prelude::*};
 use server_fn::prelude::*;
-use std::sync::mpsc::{channel, Receiver, Sender};
+use std::sync::mpsc::{Receiver, Sender, channel};
 
 // ============================================================================
 // Server Functions - RPC (same signatures as backend)
@@ -264,10 +264,8 @@ impl eframe::App for ExampleApp {
                         if ui.button("Start Counter Stream").clicked() {
                             self.start_counter();
                         }
-                    } else {
-                        if ui.button("Stop Counter Stream").clicked() {
-                            self.stop_counter();
-                        }
+                    } else if ui.button("Stop Counter Stream").clicked() {
+                        self.stop_counter();
                     }
 
                     // Show connection status
@@ -284,7 +282,9 @@ impl eframe::App for ExampleApp {
                 if let Some(value) = self.counter_value {
                     ui.label(format!("Counter: {value}"));
                     // Visual progress bar
-                    ui.add(egui::ProgressBar::new(value as f32 / 100.0).text(format!("{value}/100")));
+                    ui.add(
+                        egui::ProgressBar::new(value as f32 / 100.0).text(format!("{value}/100")),
+                    );
                 }
             });
 
@@ -301,10 +301,8 @@ impl eframe::App for ExampleApp {
                         if ui.button("Connect").clicked() {
                             self.connect_ws();
                         }
-                    } else {
-                        if ui.button("Disconnect").clicked() {
-                            self.disconnect_ws();
-                        }
+                    } else if ui.button("Disconnect").clicked() {
+                        self.disconnect_ws();
                     }
 
                     // Show connection status
@@ -322,17 +320,22 @@ impl eframe::App for ExampleApp {
                 if self.ws_echo.is_some() {
                     ui.horizontal(|ui| {
                         let response = ui.text_edit_singleline(&mut self.ws_input);
-                        if ui.button("Send").clicked() || (response.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter))) {
+                        if ui.button("Send").clicked()
+                            || (response.lost_focus()
+                                && ui.input(|i| i.key_pressed(egui::Key::Enter)))
+                        {
                             self.send_ws();
                         }
                     });
 
                     // Message log
-                    egui::ScrollArea::vertical().max_height(100.0).show(ui, |ui| {
-                        for msg in &self.ws_messages {
-                            ui.monospace(msg);
-                        }
-                    });
+                    egui::ScrollArea::vertical()
+                        .max_height(100.0)
+                        .show(ui, |ui| {
+                            for msg in &self.ws_messages {
+                                ui.monospace(msg);
+                            }
+                        });
                 }
             });
 

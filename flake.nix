@@ -17,7 +17,7 @@
         };
 
         rustToolchain = pkgs.rust-bin.stable.latest.default.override {
-          extensions = [ "rust-src" "rust-analyzer" ];
+          extensions = [ "rust-src" "rust-analyzer" "clippy" ];
           targets = [ "wasm32-unknown-unknown" ];
         };
       in

@@ -218,9 +218,7 @@ mod server {
     where
         F: std::future::Future<Output = T>,
     {
-        REQUEST_CONTEXT
-            .scope(RefCell::new(Some(ctx)), f)
-            .await
+        REQUEST_CONTEXT.scope(RefCell::new(Some(ctx)), f).await
     }
 
     // ========================================================================
@@ -309,9 +307,7 @@ mod server {
     where
         F: std::future::Future<Output = T>,
     {
-        CUSTOM_CONTEXT
-            .scope(RefCell::new(HashMap::new()), f)
-            .await
+        CUSTOM_CONTEXT.scope(RefCell::new(HashMap::new()), f).await
     }
 
     /// Run a future with both request context and custom context.
@@ -323,9 +319,7 @@ mod server {
     {
         REQUEST_CONTEXT
             .scope(RefCell::new(Some(ctx)), async {
-                CUSTOM_CONTEXT
-                    .scope(RefCell::new(HashMap::new()), f)
-                    .await
+                CUSTOM_CONTEXT.scope(RefCell::new(HashMap::new()), f).await
             })
             .await
     }

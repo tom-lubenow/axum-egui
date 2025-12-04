@@ -25,7 +25,7 @@
 
 use proc_macro::TokenStream;
 use quote::{format_ident, quote};
-use syn::{parse_macro_input, FnArg, ItemFn, Pat, ReturnType, Type};
+use syn::{FnArg, ItemFn, Pat, ReturnType, Type, parse_macro_input};
 
 /// Server function mode
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -156,14 +156,30 @@ fn generate_rpc(input: ItemFn, encoding: Encoding) -> TokenStream {
     // Generate server-side and client-side code based on encoding
     let (server_code, client_code) = match encoding {
         Encoding::Json => generate_rpc_json(
-            vis, asyncness, fn_name, &endpoint, body,
-            &param_names, &param_types, &return_type, &error_type,
-            &request_name, &response_name,
+            vis,
+            asyncness,
+            fn_name,
+            &endpoint,
+            body,
+            &param_names,
+            &param_types,
+            &return_type,
+            &error_type,
+            &request_name,
+            &response_name,
         ),
         Encoding::MsgPack => generate_rpc_msgpack(
-            vis, asyncness, fn_name, &endpoint, body,
-            &param_names, &param_types, &return_type, &error_type,
-            &request_name, &response_name,
+            vis,
+            asyncness,
+            fn_name,
+            &endpoint,
+            body,
+            &param_names,
+            &param_types,
+            &return_type,
+            &error_type,
+            &request_name,
+            &response_name,
         ),
     };
 
@@ -191,6 +207,7 @@ fn generate_rpc(input: ItemFn, encoding: Encoding) -> TokenStream {
 }
 
 /// Generate JSON-encoded RPC code
+#[allow(clippy::too_many_arguments)]
 fn generate_rpc_json(
     vis: &syn::Visibility,
     asyncness: &Option<syn::token::Async>,
@@ -279,6 +296,7 @@ fn generate_rpc_json(
 }
 
 /// Generate MessagePack-encoded RPC code
+#[allow(clippy::too_many_arguments)]
 fn generate_rpc_msgpack(
     vis: &syn::Visibility,
     asyncness: &Option<syn::token::Async>,

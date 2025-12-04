@@ -124,7 +124,7 @@ mod client {
     use super::*;
     use gloo_net::eventsource::futures::EventSource;
     use std::marker::PhantomData;
-    use std::sync::mpsc::{channel, Receiver, Sender, TryRecvError};
+    use std::sync::mpsc::{Receiver, Sender, TryRecvError, channel};
     use wasm_bindgen_futures::spawn_local;
 
     /// Connection state for SSE stream.
@@ -253,9 +253,7 @@ mod client {
             let mut es = match EventSource::new(&endpoint) {
                 Ok(es) => es,
                 Err(e) => {
-                    web_sys::console::error_1(
-                        &format!("SSE connection failed: {:?}", e).into(),
-                    );
+                    web_sys::console::error_1(&format!("SSE connection failed: {:?}", e).into());
 
                     // Check if we've exceeded max attempts
                     if let Some(max) = config.max_attempts {
@@ -302,9 +300,7 @@ mod client {
                         }
                     }
                     Err(e) => {
-                        web_sys::console::error_1(
-                            &format!("SSE error: {:?}", e).into(),
-                        );
+                        web_sys::console::error_1(&format!("SSE error: {:?}", e).into());
                         break;
                     }
                 }

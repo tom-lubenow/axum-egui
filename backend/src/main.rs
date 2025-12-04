@@ -4,11 +4,11 @@
 //! and the `#[server]` macro for server functions.
 
 use axum::{
+    Router,
     body::Body,
-    http::{header, StatusCode, Uri},
+    http::{StatusCode, Uri, header},
     response::{Html, IntoResponse, Response},
     routing::{get, post},
-    Router,
 };
 use rust_embed::RustEmbed;
 use serde::{Deserialize, Serialize};
@@ -40,7 +40,10 @@ pub async fn whoami() -> Result<WhoamiResponse, ServerFnError> {
     let ctx = request_context();
 
     let user_agent = ctx.header("user-agent").unwrap_or("unknown").to_string();
-    let ip = ctx.client_ip().map(|ip| ip.to_string()).unwrap_or_else(|| "unknown".to_string());
+    let ip = ctx
+        .client_ip()
+        .map(|ip| ip.to_string())
+        .unwrap_or_else(|| "unknown".to_string());
     let path = ctx.path().to_string();
 
     println!("Server: whoami from {} ({})", ip, user_agent);
@@ -81,7 +84,10 @@ pub async fn get_app_info() -> Result<AppInfoResponse, ServerFnError> {
     // Now use it
     let config: AppConfig = use_context()?;
 
-    println!("Server: get_app_info - {} v{}", config.app_name, config.version);
+    println!(
+        "Server: get_app_info - {} v{}",
+        config.app_name, config.version
+    );
 
     Ok(AppInfoResponse {
         app_name: config.app_name,
