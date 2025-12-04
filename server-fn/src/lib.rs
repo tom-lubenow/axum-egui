@@ -173,6 +173,10 @@ pub mod prelude {
     pub use serde;
     pub use serde_json;
 
+    // MessagePack serialization (when enabled)
+    #[cfg(feature = "msgpack")]
+    pub use rmp_serde;
+
     // Request context
     pub use super::context::{request_context, try_request_context, RequestContext};
 

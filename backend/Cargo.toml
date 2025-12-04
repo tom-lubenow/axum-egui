@@ -15,5 +15,6 @@ rust-embed = { workspace = true }
 mime_guess = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
-server-fn = { workspace = true }
+server-fn = { workspace = true, features = ["msgpack"] }
+rmp-serde = "1"
 

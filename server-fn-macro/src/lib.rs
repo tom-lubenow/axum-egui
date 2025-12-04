@@ -38,39 +38,77 @@ enum ServerMode {
     Ws,
 }
 
-/// Parse the attribute to determine the mode
-fn parse_mode(attr: TokenStream) -> ServerMode {
+/// Serialization encoding
+#[derive(Debug, Clone, Copy, PartialEq)]
+enum Encoding {
+    Json,
+    MsgPack,
+}
+
+/// Parsed server function attributes
+struct ServerAttrs {
+    mode: ServerMode,
+    encoding: Encoding,
+}
+
+/// Parse the attribute to determine the mode and encoding
+fn parse_attrs(attr: TokenStream) -> ServerAttrs {
     let attr_str = attr.to_string();
-    if attr_str.contains("ws") {
+
+    let mode = if attr_str.contains("ws") {
         ServerMode::Ws
     } else if attr_str.contains("sse") {
         ServerMode::Sse
     } else {
         ServerMode::Rpc
-    }
+    };
+
+    let encoding = if attr_str.contains("msgpack") {
+        Encoding::MsgPack
+    } else {
+        Encoding::Json
+    };
+
+    ServerAttrs { mode, encoding }
 }
 
 /// Attribute macro that generates both server handler and client caller.
 ///
 /// # Modes
 ///
-/// - `#[server]` - Standard RPC (request/response)
+/// - `#[server]` - Standard RPC (request/response) with JSON encoding
+/// - `#[server(msgpack)]` - Standard RPC with MessagePack encoding (smaller, faster)
 /// - `#[server(sse)]` - Server-Sent Events (streaming from server)
 /// - `#[server(ws)]` - WebSocket (bidirectional streaming)
+///
+/// # Encoding
+///
+/// By default, server functions use JSON for serialization. For better performance
+/// with large payloads or frequent calls, use MessagePack:
+///
+/// ```ignore
+/// #[server(msgpack)]
+/// pub async fn send_data(payload: Vec<u8>) -> Result<Vec<u8>, ServerFnError> {
+///     // MessagePack encoding is ~30% smaller and faster than JSON
+///     Ok(payload)
+/// }
+/// ```
+///
+/// Note: To use MessagePack, enable the `msgpack` feature in server-fn.
 #[proc_macro_attribute]
 pub fn server(attr: TokenStream, item: TokenStream) -> TokenStream {
-    let mode = parse_mode(attr);
+    let attrs = parse_attrs(attr);
     let input = parse_macro_input!(item as ItemFn);
 
-    match mode {
-        ServerMode::Rpc => generate_rpc(input),
+    match attrs.mode {
+        ServerMode::Rpc => generate_rpc(input, attrs.encoding),
         ServerMode::Sse => generate_sse(input),
         ServerMode::Ws => generate_ws(input),
     }
 }
 
 /// Generate code for standard RPC mode
-fn generate_rpc(input: ItemFn) -> TokenStream {
+fn generate_rpc(input: ItemFn, encoding: Encoding) -> TokenStream {
     let fn_name = &input.sig.ident;
     let fn_name_str = fn_name.to_string();
     let endpoint = format!("/api/{}", fn_name_str);
@@ -115,8 +153,57 @@ fn generate_rpc(input: ItemFn) -> TokenStream {
         ReturnType::Default => quote! { ServerFnError },
     };
 
-    // Generate server-side code (non-WASM)
-    // Extracts headers for RequestContext (IP comes from headers like X-Forwarded-For)
+    // Generate server-side and client-side code based on encoding
+    let (server_code, client_code) = match encoding {
+        Encoding::Json => generate_rpc_json(
+            vis, asyncness, fn_name, &endpoint, body,
+            &param_names, &param_types, &return_type, &error_type,
+            &request_name, &response_name,
+        ),
+        Encoding::MsgPack => generate_rpc_msgpack(
+            vis, asyncness, fn_name, &endpoint, body,
+            &param_names, &param_types, &return_type, &error_type,
+            &request_name, &response_name,
+        ),
+    };
+
+    // Generate shared types (for both targets)
+    let request_struct = quote! {
+        #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+        #vis struct #request_name {
+            #(pub #param_names: #param_types),*
+        }
+    };
+
+    let response_struct = quote! {
+        #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+        #vis struct #response_name(pub #return_type);
+    };
+
+    let expanded = quote! {
+        #request_struct
+        #response_struct
+        #server_code
+        #client_code
+    };
+
+    TokenStream::from(expanded)
+}
+
+/// Generate JSON-encoded RPC code
+fn generate_rpc_json(
+    vis: &syn::Visibility,
+    asyncness: &Option<syn::token::Async>,
+    fn_name: &syn::Ident,
+    endpoint: &str,
+    body: &syn::Block,
+    param_names: &[&syn::Ident],
+    param_types: &[&syn::Type],
+    return_type: &proc_macro2::TokenStream,
+    error_type: &proc_macro2::TokenStream,
+    request_name: &syn::Ident,
+    response_name: &syn::Ident,
+) -> (proc_macro2::TokenStream, proc_macro2::TokenStream) {
     let server_code = quote! {
         #[cfg(not(target_arch = "wasm32"))]
         #vis #asyncness fn #fn_name(
@@ -156,7 +243,6 @@ fn generate_rpc(input: ItemFn) -> TokenStream {
         }
     };
 
-    // Generate client-side code (WASM)
     let client_code = quote! {
         #[cfg(target_arch = "wasm32")]
         #vis async fn #fn_name(#(#param_names: #param_types),*) -> Result<#return_type, #error_type> {
@@ -189,27 +275,131 @@ fn generate_rpc(input: ItemFn) -> TokenStream {
         }
     };
 
-    // Generate shared types (for both targets)
-    let request_struct = quote! {
-        #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-        #vis struct #request_name {
-            #(pub #param_names: #param_types),*
+    (server_code, client_code)
+}
+
+/// Generate MessagePack-encoded RPC code
+fn generate_rpc_msgpack(
+    vis: &syn::Visibility,
+    asyncness: &Option<syn::token::Async>,
+    fn_name: &syn::Ident,
+    endpoint: &str,
+    body: &syn::Block,
+    param_names: &[&syn::Ident],
+    param_types: &[&syn::Type],
+    return_type: &proc_macro2::TokenStream,
+    error_type: &proc_macro2::TokenStream,
+    request_name: &syn::Ident,
+    response_name: &syn::Ident,
+) -> (proc_macro2::TokenStream, proc_macro2::TokenStream) {
+    let server_code = quote! {
+        #[cfg(not(target_arch = "wasm32"))]
+        #vis #asyncness fn #fn_name(
+            headers: axum::http::HeaderMap,
+            uri: axum::http::Uri,
+            body: axum::body::Bytes,
+        ) -> axum::response::Response {
+            use axum::response::IntoResponse;
+
+            // Deserialize request from MessagePack
+            let req: #request_name = match rmp_serde::from_slice(&body) {
+                Ok(r) => r,
+                Err(e) => {
+                    let error_json = format!(r#"{{"type":"Deserialization","data":"{}"}}"#, e);
+                    return (
+                        axum::http::StatusCode::BAD_REQUEST,
+                        [(axum::http::header::CONTENT_TYPE, "application/json")],
+                        error_json,
+                    ).into_response();
+                }
+            };
+
+            #(let #param_names: #param_types = req.#param_names;)*
+
+            // Build request context
+            let path = uri.path().to_string();
+            let query = uri.query().map(|s| s.to_string());
+            let ctx = server_fn::context::RequestContext::from_parts(headers, None, path, query);
+
+            // Run the user's function body with full context available
+            let result: Result<#return_type, #error_type> = server_fn::context::with_full_context(ctx, async {
+                (|| async #body)().await
+            }).await;
+
+            match result {
+                Ok(value) => {
+                    match rmp_serde::to_vec(&(#response_name(value))) {
+                        Ok(bytes) => (
+                            axum::http::StatusCode::OK,
+                            [(axum::http::header::CONTENT_TYPE, "application/msgpack")],
+                            bytes,
+                        ).into_response(),
+                        Err(e) => {
+                            let error_json = format!(r#"{{"type":"Serialization","data":"{}"}}"#, e);
+                            (
+                                axum::http::StatusCode::INTERNAL_SERVER_ERROR,
+                                [(axum::http::header::CONTENT_TYPE, "application/json")],
+                                error_json,
+                            ).into_response()
+                        }
+                    }
+                }
+                Err(e) => {
+                    tracing::error!("Server function error: {:?}", e);
+                    // Serialize error as JSON for consistency
+                    let error_json = serde_json::to_string(&e).unwrap_or_else(|_| {
+                        r#"{"type":"Custom","data":"Serialization failed"}"#.to_string()
+                    });
+                    (
+                        axum::http::StatusCode::BAD_REQUEST,
+                        [(axum::http::header::CONTENT_TYPE, "application/json")],
+                        error_json,
+                    ).into_response()
+                }
+            }
         }
     };
 
-    let response_struct = quote! {
-        #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-        #vis struct #response_name(pub #return_type);
+    let client_code = quote! {
+        #[cfg(target_arch = "wasm32")]
+        #vis async fn #fn_name(#(#param_names: #param_types),*) -> Result<#return_type, #error_type> {
+            let req = #request_name { #(#param_names),* };
+
+            // Serialize request as MessagePack
+            let body_bytes = rmp_serde::to_vec(&req)
+                .map_err(|e| ServerFnError::Serialization(e.to_string()))?;
+
+            let resp = gloo_net::http::Request::post(#endpoint)
+                .header("Content-Type", "application/msgpack")
+                .body(body_bytes)?
+                .send()
+                .await
+                .map_err(|e| ServerFnError::Request(e.to_string()))?;
+
+            if !resp.ok() {
+                let status = resp.status();
+                // Errors are always JSON
+                let error_text = resp.text().await
+                    .map_err(|e| ServerFnError::Deserialization(e.to_string()))?;
+
+                match serde_json::from_str::<#error_type>(&error_text) {
+                    Ok(err) => return Err(err),
+                    Err(_) => return Err(ServerFnError::ServerError(status)),
+                }
+            }
+
+            // Deserialize response from MessagePack
+            let bytes = resp.binary().await
+                .map_err(|e| ServerFnError::Deserialization(e.to_string()))?;
+
+            let data: #response_name = rmp_serde::from_slice(&bytes)
+                .map_err(|e| ServerFnError::Deserialization(e.to_string()))?;
+
+            Ok(data.0)
+        }
     };
 
-    let expanded = quote! {
-        #request_struct
-        #response_struct
-        #server_code
-        #client_code
-    };
-
-    TokenStream::from(expanded)
+    (server_code, client_code)
 }
 
 /// Generate code for SSE mode
