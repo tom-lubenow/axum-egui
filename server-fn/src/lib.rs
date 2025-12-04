@@ -1,9 +1,11 @@
 //! Server function support for axum-egui.
 //!
-//! This crate provides the `#[server]` macro for defining functions that
+//! This crate provides macros and runtime support for defining functions that
 //! run on the server but can be called from the client.
 //!
-//! # Example
+//! # RPC Functions
+//!
+//! Simple request/response pattern:
 //!
 //! ```ignore
 //! use server_fn::prelude::*;
@@ -13,6 +15,33 @@
 //!     Ok(format!("Hello, {}!", name))
 //! }
 //! ```
+//!
+//! # Server-Sent Events (SSE)
+//!
+//! For streaming data from server to client:
+//!
+//! ```ignore
+//! use server_fn::prelude::*;
+//!
+//! // Server: returns a stream
+//! #[server(sse)]
+//! pub async fn counter() -> impl Stream<Item = i32> {
+//!     async_stream::stream! {
+//!         for i in 0..10 {
+//!             tokio::time::sleep(Duration::from_secs(1)).await;
+//!             yield i;
+//!         }
+//!     }
+//! }
+//!
+//! // Client: receives events via SseStream
+//! let stream = counter();
+//! for event in stream.try_iter() {
+//!     // handle event
+//! }
+//! ```
+
+pub mod sse;
 
 pub use server_fn_macro::server;
 
@@ -51,11 +80,26 @@ pub mod prelude {
     pub use serde;
     pub use serde_json;
 
+    // SSE types
+    pub use super::sse::ReconnectConfig;
+
+    #[cfg(target_arch = "wasm32")]
+    pub use super::sse::{ConnectionState, SseStream};
+
+    #[cfg(not(target_arch = "wasm32"))]
+    pub use super::sse::into_sse_response;
+
     #[cfg(not(target_arch = "wasm32"))]
     pub use axum;
 
     #[cfg(not(target_arch = "wasm32"))]
     pub use tracing;
+
+    #[cfg(not(target_arch = "wasm32"))]
+    pub use async_stream;
+
+    #[cfg(not(target_arch = "wasm32"))]
+    pub use futures::Stream;
 
     #[cfg(target_arch = "wasm32")]
     pub use gloo_net;
