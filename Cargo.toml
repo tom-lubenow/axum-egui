@@ -1,5 +1,5 @@
 [workspace]
-members = ["axum-egui", "server-fn", "server-fn-macro", "examples/basic"]
+members = ["axum-egui", "server-fn", "server-fn-macro", "examples/basic", "examples/multi-frontend"]
 resolver = "2"
 
 # Note: example frontends are intentionally NOT in the workspace.

@@ -9,7 +9,10 @@
 //! - SSE streaming with `#[server(sse)]`
 //! - WebSocket bidirectional communication with `#[server(ws)]`
 
-use axum::{routing::{get, post}, Router};
+use axum::{
+    Router,
+    routing::{get, post},
+};
 use axum_egui::prelude::*;
 use rust_embed::RustEmbed;
 use serde::{Deserialize, Serialize};

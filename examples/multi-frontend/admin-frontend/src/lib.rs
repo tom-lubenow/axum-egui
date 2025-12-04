@@ -1,0 +1,98 @@
+//! Admin frontend - Dashboard with server stats.
+
+use eframe::egui;
+use serde::{Deserialize, Serialize};
+use wasm_bindgen::prelude::*;
+use wasm_bindgen::JsCast;
+
+/// Admin app state - must match the backend's AdminApp struct.
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct AdminApp {
+    pub total_users: i32,
+    pub active_sessions: i32,
+    pub server_uptime_secs: u64,
+}
+
+impl AdminApp {
+    fn format_uptime(&self) -> String {
+        let hours = self.server_uptime_secs / 3600;
+        let minutes = (self.server_uptime_secs % 3600) / 60;
+        let seconds = self.server_uptime_secs % 60;
+        format!("{}h {}m {}s", hours, minutes, seconds)
+    }
+}
+
+impl eframe::App for AdminApp {
+    fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        egui::CentralPanel::default().show(ctx, |ui| {
+            ui.heading("Admin Dashboard");
+            ui.separator();
+
+            ui.horizontal(|ui| {
+                ui.label("Total Users:");
+                ui.strong(format!("{}", self.total_users));
+            });
+
+            ui.horizontal(|ui| {
+                ui.label("Active Sessions:");
+                ui.strong(format!("{}", self.active_sessions));
+            });
+
+            ui.horizontal(|ui| {
+                ui.label("Server Uptime:");
+                ui.strong(self.format_uptime());
+            });
+
+            ui.separator();
+            ui.colored_label(egui::Color32::YELLOW, "Admin Panel - Restricted Access");
+        });
+    }
+}
+
+/// Get initial state from the server-injected JSON.
+fn get_initial_state() -> AdminApp {
+    let window = web_sys::window().expect("no window");
+    let document = window.document().expect("no document");
+
+    if let Some(element) = document.get_element_by_id("axum-egui-state") {
+        if let Some(json) = element.text_content() {
+            if let Ok(state) = serde_json::from_str(&json) {
+                return state;
+            }
+        }
+    }
+
+    AdminApp::default()
+}
+
+#[wasm_bindgen(start)]
+pub fn main() {
+    let window = web_sys::window().expect("no window");
+    let document = window.document().expect("no document");
+
+    // Hide loading text
+    if let Some(loading) = document.get_element_by_id("loading_text") {
+        let _ = loading.set_attribute("style", "display: none;");
+    }
+
+    // Get the canvas element
+    let canvas = document
+        .get_element_by_id("the_canvas_id")
+        .expect("no canvas element")
+        .dyn_into::<web_sys::HtmlCanvasElement>()
+        .expect("not a canvas element");
+
+    let app = get_initial_state();
+
+    let options = eframe::WebOptions::default();
+    wasm_bindgen_futures::spawn_local(async move {
+        eframe::WebRunner::new()
+            .start(
+                canvas,
+                options,
+                Box::new(|_cc| Ok(Box::new(app))),
+            )
+            .await
+            .expect("failed to start eframe");
+    });
+}

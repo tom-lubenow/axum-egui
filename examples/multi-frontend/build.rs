@@ -1,7 +1,8 @@
-//! Build script for compiling egui WASM frontends.
+//! Build script for compiling multiple egui WASM frontends.
 //!
-//! This build script compiles Rust/egui frontends to WASM and prepares them
-//! for embedding with `rust-embed`.
+//! This example builds two frontends:
+//! - user-frontend/ -> User-facing counter app
+//! - admin-frontend/ -> Admin dashboard
 
 use std::path::Path;
 use std::process::Command;
@@ -9,10 +10,9 @@ use std::{env, fs};
 
 /// Configuration for building a frontend.
 struct FrontendConfig<'a> {
-    /// Directory name relative to CARGO_MANIFEST_DIR (e.g., "frontend", "admin-frontend")
+    /// Directory name relative to CARGO_MANIFEST_DIR
     dir: &'a str,
-    /// Crate name as specified in the frontend's Cargo.toml (e.g., "frontend", "admin_frontend")
-    /// This determines the .wasm filename (underscores, not hyphens)
+    /// Crate name (determines .wasm filename)
     crate_name: &'a str,
 }
 
@@ -49,10 +49,9 @@ fn build_frontend(manifest_dir: &Path, config: &FrontendConfig) {
         panic!("{} WASM build failed", config.dir);
     }
 
-    // Step 2: Run wasm-bindgen to generate JS bindings
+    // Step 2: Run wasm-bindgen
     println!("cargo:warning=Running wasm-bindgen for {}...", config.dir);
 
-    // The wasm file uses underscores (Rust crate naming convention)
     let wasm_filename = format!("{}.wasm", config.crate_name.replace('-', "_"));
     let wasm_file = frontend_dir.join(format!(
         "target/wasm32-unknown-unknown/release/{}",
@@ -61,7 +60,7 @@ fn build_frontend(manifest_dir: &Path, config: &FrontendConfig) {
 
     if !wasm_file.exists() {
         panic!(
-            "WASM file not found at {:?}. Build may have failed. Expected crate name: {}",
+            "WASM file not found at {:?}. Expected crate name: {}",
             wasm_file, config.crate_name
         );
     }
@@ -76,21 +75,18 @@ fn build_frontend(manifest_dir: &Path, config: &FrontendConfig) {
             "--no-typescript",
         ])
         .status()
-        .expect("Failed to run wasm-bindgen. Is it installed? Run: cargo install wasm-bindgen-cli");
+        .expect("Failed to run wasm-bindgen");
 
     if !status.success() {
         panic!("wasm-bindgen failed for {}", config.dir);
     }
 
-    // Step 3: Copy HTML template to dist
-    println!("cargo:warning=Copying HTML template for {}...", config.dir);
-
+    // Step 3: Copy HTML template
     let html_src = frontend_dir.join("index.html");
     let html_dst = dist_dir.join("index.html");
     fs::copy(&html_src, &html_dst)
         .unwrap_or_else(|e| panic!("Failed to copy index.html for {}: {}", config.dir, e));
 
-    // Count files in dist
     let count = fs::read_dir(&dist_dir)
         .map(|entries| entries.count())
         .unwrap_or(0);
@@ -104,18 +100,16 @@ fn main() {
     let manifest_dir = env::var("CARGO_MANIFEST_DIR").unwrap();
     let manifest_path = Path::new(&manifest_dir);
 
-    // Build all frontends
-    // Add more entries here for multiple frontends
+    // Build both frontends
     let frontends = [
         FrontendConfig {
-            dir: "frontend",
-            crate_name: "frontend",
+            dir: "user-frontend",
+            crate_name: "user_frontend",
         },
-        // Example: Uncomment to add an admin frontend
-        // FrontendConfig {
-        //     dir: "admin-frontend",
-        //     crate_name: "admin_frontend",
-        // },
+        FrontendConfig {
+            dir: "admin-frontend",
+            crate_name: "admin_frontend",
+        },
     ];
 
     for config in &frontends {

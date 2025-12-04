@@ -37,7 +37,7 @@
 
 use axum::{
     body::Body,
-    http::{header, StatusCode, Uri},
+    http::{StatusCode, Uri, header},
     response::{Html, IntoResponse, Response},
 };
 use rust_embed::RustEmbed;
@@ -118,7 +118,9 @@ impl<T: Serialize, A: RustEmbed> IntoResponse for App<T, A> {
             None => {
                 return Response::builder()
                     .status(StatusCode::INTERNAL_SERVER_ERROR)
-                    .body(Body::from("Frontend assets not found. Did you build the frontend?"))
+                    .body(Body::from(
+                        "Frontend assets not found. Did you build the frontend?",
+                    ))
                     .unwrap();
             }
         };

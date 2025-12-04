@@ -32,7 +32,7 @@ log = "0.4"
 gloo-net = "0.6"
 
 # Server functions
-server-fn = { path = "../server-fn" }
+server-fn = { path = "../../../server-fn" }
 
 [profile.release]
 opt-level = "z"  # Optimize for size
