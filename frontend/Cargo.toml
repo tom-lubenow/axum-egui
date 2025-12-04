@@ -28,6 +28,12 @@ wasm-bindgen-futures = "0.4"
 web-sys = "0.3"
 log = "0.4"
 
+# HTTP client for API calls
+gloo-net = "0.6"
+
+# Server functions
+server-fn = { path = "../server-fn" }
+
 [profile.release]
 opt-level = "z"  # Optimize for size
 lto = true

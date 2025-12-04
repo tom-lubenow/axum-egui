@@ -1,27 +1,113 @@
 //! Frontend WASM entry point for axum-egui.
 
 use eframe::wasm_bindgen::{self, prelude::*};
-use serde::{Deserialize, Serialize};
+use server_fn::prelude::*;
+use std::sync::mpsc::{channel, Receiver, Sender};
 
-/// The example app state - shared between server and client.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+// ============================================================================
+// Server Functions (same signatures as backend)
+// ============================================================================
+
+#[server]
+pub async fn greet(name: String) -> Result<String, ServerFnError> {
+    // This body is only used on the server; on WASM it generates HTTP call
+    unreachable!()
+}
+
+#[server]
+pub async fn add(a: i32, b: i32) -> Result<i32, ServerFnError> {
+    unreachable!()
+}
+
+// ============================================================================
+// App State
+// ============================================================================
+
+/// Responses from API calls.
+enum ApiResponse {
+    Greet(Result<String, ServerFnError>),
+    Add(Result<i32, ServerFnError>),
+}
+
+/// The example app state.
+#[derive(Debug, serde::Serialize, serde::Deserialize)]
 #[serde(default)]
 pub struct ExampleApp {
     pub label: String,
     pub value: f32,
+    #[serde(skip)]
+    pub server_message: Option<String>,
+    #[serde(skip)]
+    pub add_result: Option<i32>,
+    #[serde(skip)]
+    response_rx: Option<Receiver<ApiResponse>>,
+    #[serde(skip)]
+    response_tx: Option<Sender<ApiResponse>>,
 }
 
 impl Default for ExampleApp {
     fn default() -> Self {
+        let (tx, rx) = channel();
         Self {
             label: "Hello World!".to_owned(),
             value: 2.7,
+            server_message: None,
+            add_result: None,
+            response_rx: Some(rx),
+            response_tx: Some(tx),
+        }
+    }
+}
+
+impl ExampleApp {
+    /// Call the greet server function.
+    fn call_greet(&self, name: String) {
+        if let Some(tx) = &self.response_tx {
+            let tx = tx.clone();
+            wasm_bindgen_futures::spawn_local(async move {
+                let result = greet(name).await;
+                let _ = tx.send(ApiResponse::Greet(result));
+            });
+        }
+    }
+
+    /// Call the add server function.
+    fn call_add(&self, a: i32, b: i32) {
+        if let Some(tx) = &self.response_tx {
+            let tx = tx.clone();
+            wasm_bindgen_futures::spawn_local(async move {
+                let result = add(a, b).await;
+                let _ = tx.send(ApiResponse::Add(result));
+            });
+        }
+    }
+
+    /// Process any pending API responses.
+    fn process_responses(&mut self) {
+        if let Some(rx) = &self.response_rx {
+            while let Ok(response) = rx.try_recv() {
+                match response {
+                    ApiResponse::Greet(Ok(msg)) => self.server_message = Some(msg),
+                    ApiResponse::Greet(Err(e)) => {
+                        log::error!("Greet error: {e}");
+                        self.server_message = Some(format!("Error: {e}"));
+                    }
+                    ApiResponse::Add(Ok(result)) => self.add_result = Some(result),
+                    ApiResponse::Add(Err(e)) => {
+                        log::error!("Add error: {e}");
+                        self.server_message = Some(format!("Error: {e}"));
+                    }
+                }
+            }
         }
     }
 }
 
 impl eframe::App for ExampleApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        // Process any pending API responses
+        self.process_responses();
+
         egui::TopBottomPanel::top("top_panel").show(ctx, |ui| {
             egui::MenuBar::new().ui(ui, |ui| {
                 egui::widgets::global_theme_preference_buttons(ui);
@@ -32,16 +118,35 @@ impl eframe::App for ExampleApp {
             ui.heading("axum-egui example");
 
             ui.horizontal(|ui| {
-                ui.label("Write something: ");
+                ui.label("Your name: ");
                 ui.text_edit_singleline(&mut self.label);
             });
+
+            ui.horizontal(|ui| {
+                if ui.button("Greet from Server").clicked() {
+                    self.call_greet(self.label.clone());
+                }
+                if ui.button("Add 10 + 32").clicked() {
+                    self.call_add(10, 32);
+                }
+            });
+
+            ui.separator();
+
+            // Show server responses
+            if let Some(msg) = &self.server_message {
+                ui.label(format!("Server says: {msg}"));
+            }
+            if let Some(result) = &self.add_result {
+                ui.label(format!("Add result: {result}"));
+            }
+
+            ui.separator();
 
             ui.add(egui::Slider::new(&mut self.value, 0.0..=10.0).text("value"));
             if ui.button("Increment").clicked() {
                 self.value += 1.0;
             }
-
-            ui.separator();
 
             ui.with_layout(egui::Layout::bottom_up(egui::Align::LEFT), |ui| {
                 ui.horizontal(|ui| {
@@ -58,7 +163,10 @@ impl eframe::App for ExampleApp {
     }
 }
 
-/// WASM entry point - called from JavaScript.
+// ============================================================================
+// WASM Entry Point
+// ============================================================================
+
 #[wasm_bindgen(start)]
 pub fn main() {
     eframe::WebLogger::init(log::LevelFilter::Debug).ok();
@@ -70,7 +178,12 @@ pub fn main() {
             .expect("No document");
 
         // Try to read initial state from the DOM
-        let initial_state: ExampleApp = read_initial_state(&document).unwrap_or_default();
+        let mut initial_state: ExampleApp = read_initial_state(&document).unwrap_or_default();
+
+        // Set up the channel for API responses
+        let (tx, rx) = channel();
+        initial_state.response_tx = Some(tx);
+        initial_state.response_rx = Some(rx);
 
         let canvas = document
             .get_element_by_id("the_canvas_id")
@@ -88,7 +201,6 @@ pub fn main() {
             )
             .await;
 
-        // Remove the loading text
         if let Some(loading_text) = document.get_element_by_id("loading_text") {
             match start_result {
                 Ok(_) => {
@@ -105,7 +217,6 @@ pub fn main() {
     });
 }
 
-/// Read initial state from a script tag in the DOM.
 fn read_initial_state<T: serde::de::DeserializeOwned>(document: &web_sys::Document) -> Option<T> {
     let script = document.get_element_by_id("axum-egui-state")?;
     let json = script.text_content()?;

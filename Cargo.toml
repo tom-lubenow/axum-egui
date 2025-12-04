@@ -1,5 +1,5 @@
 [workspace]
-members = ["backend"]
+members = ["backend", "server-fn", "server-fn-macro"]
 resolver = "2"
 
 # Note: frontend is intentionally NOT in the workspace.
@@ -28,6 +28,9 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 # Asset embedding
 rust-embed = { version = "8", features = ["include-exclude"] }
 mime_guess = "2"
+
+# Server functions
+server-fn = { path = "server-fn" }
 
 [profile.release]
 opt-level = 2
