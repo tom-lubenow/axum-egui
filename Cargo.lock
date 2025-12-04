@@ -901,6 +901,7 @@ dependencies = [
  "js-sys",
  "serde",
  "serde_json",
+ "serde_urlencoded",
  "server-fn-macro",
  "thiserror 2.0.17",
  "tokio",

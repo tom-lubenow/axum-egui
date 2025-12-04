@@ -99,6 +99,9 @@ pub mod prelude {
     pub use async_stream;
 
     #[cfg(not(target_arch = "wasm32"))]
+    pub use futures;
+
+    #[cfg(not(target_arch = "wasm32"))]
     pub use futures::Stream;
 
     #[cfg(target_arch = "wasm32")]
