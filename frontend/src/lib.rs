@@ -5,7 +5,7 @@ use server_fn::prelude::*;
 use std::sync::mpsc::{channel, Receiver, Sender};
 
 // ============================================================================
-// Server Functions (same signatures as backend)
+// Server Functions - RPC (same signatures as backend)
 // ============================================================================
 
 #[server]
@@ -16,6 +16,15 @@ pub async fn greet(name: String) -> Result<String, ServerFnError> {
 
 #[server]
 pub async fn add(a: i32, b: i32) -> Result<i32, ServerFnError> {
+    unreachable!()
+}
+
+// ============================================================================
+// Server Functions - SSE (same signatures as backend)
+// ============================================================================
+
+#[server(sse)]
+pub async fn counter() -> impl Stream<Item = i32> {
     unreachable!()
 }
 
@@ -43,6 +52,13 @@ pub struct ExampleApp {
     response_rx: Option<Receiver<ApiResponse>>,
     #[serde(skip)]
     response_tx: Option<Sender<ApiResponse>>,
+    // SSE state
+    #[serde(skip)]
+    counter_stream: Option<SseStream<i32>>,
+    #[serde(skip)]
+    counter_value: Option<i32>,
+    #[serde(skip)]
+    counter_connected: bool,
 }
 
 impl Default for ExampleApp {
@@ -55,6 +71,9 @@ impl Default for ExampleApp {
             add_result: None,
             response_rx: Some(rx),
             response_tx: Some(tx),
+            counter_stream: None,
+            counter_value: None,
+            counter_connected: false,
         }
     }
 }
@@ -82,6 +101,20 @@ impl ExampleApp {
         }
     }
 
+    /// Start the counter SSE stream.
+    fn start_counter(&mut self) {
+        if self.counter_stream.is_none() {
+            self.counter_stream = Some(counter());
+            self.counter_connected = false;
+        }
+    }
+
+    /// Stop the counter SSE stream.
+    fn stop_counter(&mut self) {
+        self.counter_stream = None;
+        self.counter_connected = false;
+    }
+
     /// Process any pending API responses.
     fn process_responses(&mut self) {
         if let Some(rx) = &self.response_rx {
@@ -100,6 +133,17 @@ impl ExampleApp {
                 }
             }
         }
+
+        // Process SSE events
+        if let Some(stream) = &mut self.counter_stream {
+            // Update connection state
+            self.counter_connected = stream.is_connected();
+
+            // Get all pending events
+            for value in stream.try_iter() {
+                self.counter_value = Some(value);
+            }
+        }
     }
 }
 
@@ -107,6 +151,11 @@ impl eframe::App for ExampleApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         // Process any pending API responses
         self.process_responses();
+
+        // Request continuous repaints while SSE is active
+        if self.counter_stream.is_some() {
+            ctx.request_repaint();
+        }
 
         egui::TopBottomPanel::top("top_panel").show(ctx, |ui| {
             egui::MenuBar::new().ui(ui, |ui| {
@@ -117,31 +166,69 @@ impl eframe::App for ExampleApp {
         egui::CentralPanel::default().show(ctx, |ui| {
             ui.heading("axum-egui example");
 
-            ui.horizontal(|ui| {
-                ui.label("Your name: ");
-                ui.text_edit_singleline(&mut self.label);
+            // RPC Section
+            ui.group(|ui| {
+                ui.label("RPC Functions");
+                ui.horizontal(|ui| {
+                    ui.label("Your name: ");
+                    ui.text_edit_singleline(&mut self.label);
+                });
+
+                ui.horizontal(|ui| {
+                    if ui.button("Greet from Server").clicked() {
+                        self.call_greet(self.label.clone());
+                    }
+                    if ui.button("Add 10 + 32").clicked() {
+                        self.call_add(10, 32);
+                    }
+                });
+
+                if let Some(msg) = &self.server_message {
+                    ui.label(format!("Server says: {msg}"));
+                }
+                if let Some(result) = &self.add_result {
+                    ui.label(format!("Add result: {result}"));
+                }
             });
 
-            ui.horizontal(|ui| {
-                if ui.button("Greet from Server").clicked() {
-                    self.call_greet(self.label.clone());
-                }
-                if ui.button("Add 10 + 32").clicked() {
-                    self.call_add(10, 32);
+            ui.add_space(10.0);
+
+            // SSE Section
+            ui.group(|ui| {
+                ui.label("SSE Stream (Server-Sent Events)");
+
+                ui.horizontal(|ui| {
+                    let is_running = self.counter_stream.is_some();
+
+                    if !is_running {
+                        if ui.button("Start Counter Stream").clicked() {
+                            self.start_counter();
+                        }
+                    } else {
+                        if ui.button("Stop Counter Stream").clicked() {
+                            self.stop_counter();
+                        }
+                    }
+
+                    // Show connection status
+                    if is_running {
+                        let status = if self.counter_connected {
+                            "Connected"
+                        } else {
+                            "Connecting..."
+                        };
+                        ui.label(format!("Status: {status}"));
+                    }
+                });
+
+                if let Some(value) = self.counter_value {
+                    ui.label(format!("Counter: {value}"));
+                    // Visual progress bar
+                    ui.add(egui::ProgressBar::new(value as f32 / 100.0).text(format!("{value}/100")));
                 }
             });
 
-            ui.separator();
-
-            // Show server responses
-            if let Some(msg) = &self.server_message {
-                ui.label(format!("Server says: {msg}"));
-            }
-            if let Some(result) = &self.add_result {
-                ui.label(format!("Add result: {result}"));
-            }
-
-            ui.separator();
+            ui.add_space(10.0);
 
             ui.add(egui::Slider::new(&mut self.value, 0.0..=10.0).text("value"));
             if ui.button("Increment").clicked() {
