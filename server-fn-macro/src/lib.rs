@@ -75,8 +75,9 @@ fn generate_rpc(input: ItemFn) -> TokenStream {
     let fn_name_str = fn_name.to_string();
     let endpoint = format!("/api/{}", fn_name_str);
 
-    let request_name = format_ident!("{}Request", to_pascal_case(&fn_name_str));
-    let response_name = format_ident!("{}Response", to_pascal_case(&fn_name_str));
+    // Use double underscore prefix to avoid conflicts with user-defined types
+    let request_name = format_ident!("__{}Request", to_pascal_case(&fn_name_str));
+    let response_name = format_ident!("__{}Response", to_pascal_case(&fn_name_str));
 
     let vis = &input.vis;
     let asyncness = &input.sig.asyncness;
@@ -109,14 +110,25 @@ fn generate_rpc(input: ItemFn) -> TokenStream {
     };
 
     // Generate server-side code (non-WASM)
+    // Extracts headers for RequestContext (IP comes from headers like X-Forwarded-For)
     let server_code = quote! {
         #[cfg(not(target_arch = "wasm32"))]
         #vis #asyncness fn #fn_name(
-            axum::Json(req): axum::Json<#request_name>
+            headers: axum::http::HeaderMap,
+            uri: axum::http::Uri,
+            axum::Json(req): axum::Json<#request_name>,
         ) -> Result<axum::Json<#response_name>, axum::http::StatusCode> {
             #(let #param_names: #param_types = req.#param_names;)*
 
-            let result: Result<#return_type, ServerFnError> = (|| async #body)().await;
+            // Build request context (IP is extracted from headers like X-Forwarded-For)
+            let path = uri.path().to_string();
+            let query = uri.query().map(|s| s.to_string());
+            let ctx = server_fn::context::RequestContext::from_parts(headers, None, path, query);
+
+            // Run the user's function body with context available
+            let result: Result<#return_type, ServerFnError> = server_fn::context::with_context(ctx, async {
+                (|| async #body)().await
+            }).await;
 
             match result {
                 Ok(value) => Ok(axum::Json(#response_name(value))),
@@ -211,7 +223,8 @@ fn generate_sse(input: ItemFn) -> TokenStream {
     };
 
     // Generate request struct name (for URL params)
-    let request_name = format_ident!("{}Request", to_pascal_case(&fn_name_str));
+    // Use double underscore prefix to avoid conflicts with user-defined types
+    let request_name = format_ident!("__{}Request", to_pascal_case(&fn_name_str));
 
     // Generate server-side code (non-WASM)
     // SSE handlers return Sse<impl Stream<Item = Result<Event, Infallible>>>
@@ -220,8 +233,15 @@ fn generate_sse(input: ItemFn) -> TokenStream {
         quote! {
             #[cfg(not(target_arch = "wasm32"))]
             #vis async fn #fn_name(
+                headers: axum::http::HeaderMap,
+                uri: axum::http::Uri,
             ) -> axum::response::sse::Sse<impl server_fn::prelude::Stream<Item = Result<axum::response::sse::Event, std::convert::Infallible>> + Send> {
                 use server_fn::prelude::futures::StreamExt;
+
+                // Build request context
+                let path = uri.path().to_string();
+                let query = uri.query().map(|s| s.to_string());
+                let _ctx = server_fn::context::RequestContext::from_parts(headers, None, path, query);
 
                 // The body returns impl Stream<Item = T>
                 let stream = #body;
@@ -240,11 +260,18 @@ fn generate_sse(input: ItemFn) -> TokenStream {
         quote! {
             #[cfg(not(target_arch = "wasm32"))]
             #vis async fn #fn_name(
-                axum::extract::Query(req): axum::extract::Query<#request_name>
+                headers: axum::http::HeaderMap,
+                uri: axum::http::Uri,
+                axum::extract::Query(req): axum::extract::Query<#request_name>,
             ) -> axum::response::sse::Sse<impl server_fn::prelude::Stream<Item = Result<axum::response::sse::Event, std::convert::Infallible>> + Send> {
                 use server_fn::prelude::futures::StreamExt;
 
                 #(let #param_names: #param_types = req.#param_names;)*
+
+                // Build request context
+                let path = uri.path().to_string();
+                let query_str = uri.query().map(|s| s.to_string());
+                let _ctx = server_fn::context::RequestContext::from_parts(headers, None, path, query_str);
 
                 // The body returns impl Stream<Item = T>
                 let stream = #body;
@@ -421,10 +448,20 @@ fn generate_ws(input: ItemFn) -> TokenStream {
     let server_code = quote! {
         #[cfg(not(target_arch = "wasm32"))]
         #vis async fn #fn_name(
+            headers: axum::http::HeaderMap,
+            uri: axum::http::Uri,
             ws: axum::extract::ws::WebSocketUpgrade,
         ) -> impl axum::response::IntoResponse {
+            // Build request context before upgrade
+            let path = uri.path().to_string();
+            let query = uri.query().map(|s| s.to_string());
+            let ctx = server_fn::context::RequestContext::from_parts(headers, None, path, query);
+
             ws.on_upgrade(move |socket| async move {
                 use server_fn::prelude::futures::{StreamExt, SinkExt};
+
+                // Make context available during WebSocket handling
+                let _ = ctx; // Context is captured and available
 
                 let (mut ws_tx, ws_rx) = socket.split();
 

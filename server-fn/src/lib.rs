@@ -16,6 +16,21 @@
 //! }
 //! ```
 //!
+//! # Request Context
+//!
+//! Access HTTP request details (headers, cookies, IP) within server functions:
+//!
+//! ```ignore
+//! use server_fn::prelude::*;
+//!
+//! #[server]
+//! pub async fn whoami() -> Result<String, ServerFnError> {
+//!     let ctx = request_context();
+//!     let user_agent = ctx.header("user-agent").unwrap_or("unknown");
+//!     Ok(format!("Your browser: {}", user_agent))
+//! }
+//! ```
+//!
 //! # Server-Sent Events (SSE)
 //!
 //! For streaming data from server to client:
@@ -41,6 +56,7 @@
 //! }
 //! ```
 
+pub mod context;
 pub mod sse;
 pub mod ws;
 
@@ -80,6 +96,12 @@ pub mod prelude {
     // Re-export serde for the generated code
     pub use serde;
     pub use serde_json;
+
+    // Request context
+    pub use super::context::{request_context, try_request_context, RequestContext};
+
+    #[cfg(not(target_arch = "wasm32"))]
+    pub use super::context::with_context;
 
     // SSE types
     pub use super::sse::ReconnectConfig;
