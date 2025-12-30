@@ -1,0 +1,24 @@
+[package]
+name = "basic-shared"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+[features]
+# Default to server for workspace builds
+default = ["server"]
+# Server-side: enables axum handlers and auto-registration
+server = ["server-fn/server", "dep:async-stream", "dep:tokio"]
+# Web/WASM: enables HTTP client calls
+web = ["server-fn/web"]
+
+[dependencies]
+# Core dependencies (both targets)
+serde = { workspace = true }
+serde_json = { workspace = true }
+server-fn = { workspace = true }
+futures = "0.3"
+
+# Server-only
+async-stream = { version = "0.3", optional = true }
+tokio = { workspace = true, optional = true }

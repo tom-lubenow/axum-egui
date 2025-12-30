@@ -1,0 +1,16 @@
+[package]
+name = "multi-frontend-shared"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+[features]
+# Default to server for workspace builds
+default = ["server"]
+server = ["server-fn/server"]
+web = ["server-fn/web"]
+
+[dependencies]
+serde = { workspace = true }
+serde_json = { workspace = true }
+server-fn = { workspace = true }

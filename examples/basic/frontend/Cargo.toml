@@ -1,42 +1,28 @@
 [package]
-name = "frontend"
+name = "basic-frontend"
 version = "0.1.0"
 edition = "2024"
-rust-version = "1.85"
-
-# This is a standalone project (not in the workspace) so build.rs can compile it
-# without cargo lock deadlock.
+publish = false
 
 [lib]
 crate-type = ["cdylib"]
 
 [dependencies]
-# egui ecosystem
-egui = "0.33"
-eframe = { version = "0.33", default-features = false, features = [
-    "default_fonts",
-    "glow",
-] }
+# Shared types and server functions (web mode)
+basic-shared = { path = "../shared", default-features = false, features = ["web"] }
 
-# Serialization
-serde = { version = "1", features = ["derive"] }
-serde_json = "1"
+# egui
+eframe = { version = "0.31", default-features = false, features = ["wgpu", "web_screen_reader"] }
+egui = "0.31"
 
-# WASM - pin to match wasm-bindgen-cli version
+# WASM
 wasm-bindgen = "=0.2.104"
 wasm-bindgen-futures = "0.4"
-web-sys = "0.3"
+web-sys = { version = "0.3", features = ["Document", "Element", "HtmlElement", "HtmlCanvasElement"] }
 log = "0.4"
 
-# HTTP client for API calls
-gloo-net = "0.6"
-
-# Server functions
-server-fn = { path = "../../../server-fn" }
-
-[profile.release]
-opt-level = "z"  # Optimize for size
-lto = true
-
-# Empty workspace table makes this a standalone project
-[workspace]
+# For server function calls
+server-fn = { workspace = true, features = ["web"] }
+serde = { workspace = true }
+serde_json = { workspace = true }
+futures = "0.3"

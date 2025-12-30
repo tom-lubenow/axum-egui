@@ -1,9 +1,36 @@
 [workspace]
-members = ["axum-egui", "server-fn", "server-fn-macro", "examples/basic", "examples/multi-frontend"]
+members = [
+    "axum-egui",
+    "axum-egui-build",
+    "server-fn",
+    "server-fn-macro",
+    # Basic example with separate frontend/server crates
+    "examples/basic/shared",
+    "examples/basic/frontend",
+    "examples/basic/server",
+    # Multi-frontend example with two frontends
+    "examples/multi-frontend/shared",
+    "examples/multi-frontend/user-frontend",
+    "examples/multi-frontend/admin-frontend",
+    "examples/multi-frontend/server",
+]
 resolver = "2"
 
-# Note: example frontends are intentionally NOT in the workspace.
-# They're separate projects so build.rs can compile them without cargo lock deadlock.
+# Default members to build (excludes frontend crates which are wasm32-only)
+# Frontend crates are built automatically via artifact dependencies
+default-members = [
+    "axum-egui",
+    "axum-egui-build",
+    "server-fn",
+    "server-fn-macro",
+    "examples/basic/shared",
+    "examples/basic/server",
+    "examples/multi-frontend/shared",
+    "examples/multi-frontend/server",
+]
+
+# With artifact dependencies (RFC 3028), we can have frontend crates in the workspace.
+# The server's build.rs uses the WASM artifact directly - no recursive cargo calls.
 
 [workspace.package]
 edition = "2024"

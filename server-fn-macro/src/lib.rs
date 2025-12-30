@@ -1,5 +1,11 @@
 //! Proc macro for generating server functions.
 //!
+//! # Features
+//!
+//! The generated code uses feature flags:
+//! - `server` - Generates axum handlers and auto-registers with inventory
+//! - `web` - Generates client-side HTTP callers
+//!
 //! # RPC Usage
 //! ```ignore
 //! #[server]
@@ -20,8 +26,8 @@
 //! }
 //! ```
 //!
-//! On the server, this generates an axum handler.
-//! On the client (WASM), this generates a function that returns SseStream<T>.
+//! On the server (`feature = "server"`), this generates an axum handler.
+//! On the client (`feature = "web"`), this generates a function that makes HTTP calls.
 
 use proc_macro::TokenStream;
 use quote::{format_ident, quote};
@@ -221,8 +227,11 @@ fn generate_rpc_json(
     request_name: &syn::Ident,
     response_name: &syn::Ident,
 ) -> (proc_macro2::TokenStream, proc_macro2::TokenStream) {
+    // Generate a unique handler function name for inventory registration
+    let handler_fn_name = format_ident!("__{}_handler", fn_name);
+
     let server_code = quote! {
-        #[cfg(not(target_arch = "wasm32"))]
+        #[cfg(feature = "server")]
         #vis #asyncness fn #fn_name(
             headers: axum::http::HeaderMap,
             uri: axum::http::Uri,
@@ -258,10 +267,25 @@ fn generate_rpc_json(
                 }
             }
         }
+
+        // Auto-registration with inventory
+        #[cfg(feature = "server")]
+        fn #handler_fn_name() -> axum::routing::MethodRouter {
+            axum::routing::post(#fn_name)
+        }
+
+        #[cfg(feature = "server")]
+        server_fn::prelude::inventory::submit! {
+            server_fn::registry::ServerFunction::new(
+                axum::http::Method::POST,
+                #endpoint,
+                #handler_fn_name,
+            )
+        }
     };
 
     let client_code = quote! {
-        #[cfg(target_arch = "wasm32")]
+        #[cfg(feature = "web")]
         #vis async fn #fn_name(#(#param_names: #param_types),*) -> Result<#return_type, #error_type> {
             let req = #request_name { #(#param_names),* };
 
@@ -310,8 +334,11 @@ fn generate_rpc_msgpack(
     request_name: &syn::Ident,
     response_name: &syn::Ident,
 ) -> (proc_macro2::TokenStream, proc_macro2::TokenStream) {
+    // Generate a unique handler function name for inventory registration
+    let handler_fn_name = format_ident!("__{}_handler", fn_name);
+
     let server_code = quote! {
-        #[cfg(not(target_arch = "wasm32"))]
+        #[cfg(feature = "server")]
         #vis #asyncness fn #fn_name(
             headers: axum::http::HeaderMap,
             uri: axum::http::Uri,
@@ -376,10 +403,25 @@ fn generate_rpc_msgpack(
                 }
             }
         }
+
+        // Auto-registration with inventory
+        #[cfg(feature = "server")]
+        fn #handler_fn_name() -> axum::routing::MethodRouter {
+            axum::routing::post(#fn_name)
+        }
+
+        #[cfg(feature = "server")]
+        server_fn::prelude::inventory::submit! {
+            server_fn::registry::ServerFunction::new(
+                axum::http::Method::POST,
+                #endpoint,
+                #handler_fn_name,
+            )
+        }
     };
 
     let client_code = quote! {
-        #[cfg(target_arch = "wasm32")]
+        #[cfg(feature = "web")]
         #vis async fn #fn_name(#(#param_names: #param_types),*) -> Result<#return_type, #error_type> {
             let req = #request_name { #(#param_names),* };
 
@@ -459,12 +501,15 @@ fn generate_sse(input: ItemFn) -> TokenStream {
     // Use double underscore prefix to avoid conflicts with user-defined types
     let request_name = format_ident!("__{}Request", to_pascal_case(&fn_name_str));
 
-    // Generate server-side code (non-WASM)
+    // Generate a unique handler function name for inventory registration
+    let handler_fn_name = format_ident!("__{}_handler", fn_name);
+
+    // Generate server-side code (server feature)
     // SSE handlers return Sse<impl Stream<Item = Result<Event, Infallible>>>
     let server_code = if params.is_empty() {
         // No parameters - simple GET endpoint
         quote! {
-            #[cfg(not(target_arch = "wasm32"))]
+            #[cfg(feature = "server")]
             #vis async fn #fn_name(
                 headers: axum::http::HeaderMap,
                 uri: axum::http::Uri,
@@ -487,11 +532,26 @@ fn generate_sse(input: ItemFn) -> TokenStream {
                 axum::response::sse::Sse::new(event_stream)
                     .keep_alive(axum::response::sse::KeepAlive::default())
             }
+
+            // Auto-registration with inventory
+            #[cfg(feature = "server")]
+            fn #handler_fn_name() -> axum::routing::MethodRouter {
+                axum::routing::get(#fn_name)
+            }
+
+            #[cfg(feature = "server")]
+            server_fn::prelude::inventory::submit! {
+                server_fn::registry::ServerFunction::new(
+                    axum::http::Method::GET,
+                    #endpoint,
+                    #handler_fn_name,
+                )
+            }
         }
     } else {
         // With parameters - use Query extractor
         quote! {
-            #[cfg(not(target_arch = "wasm32"))]
+            #[cfg(feature = "server")]
             #vis async fn #fn_name(
                 headers: axum::http::HeaderMap,
                 uri: axum::http::Uri,
@@ -517,14 +577,29 @@ fn generate_sse(input: ItemFn) -> TokenStream {
                 axum::response::sse::Sse::new(event_stream)
                     .keep_alive(axum::response::sse::KeepAlive::default())
             }
+
+            // Auto-registration with inventory
+            #[cfg(feature = "server")]
+            fn #handler_fn_name() -> axum::routing::MethodRouter {
+                axum::routing::get(#fn_name)
+            }
+
+            #[cfg(feature = "server")]
+            server_fn::prelude::inventory::submit! {
+                server_fn::registry::ServerFunction::new(
+                    axum::http::Method::GET,
+                    #endpoint,
+                    #handler_fn_name,
+                )
+            }
         }
     };
 
-    // Generate client-side code (WASM)
+    // Generate client-side code (web feature)
     // Returns SseStream<T> that connects to the endpoint
     let client_code = if params.is_empty() {
         quote! {
-            #[cfg(target_arch = "wasm32")]
+            #[cfg(feature = "web")]
             #vis fn #fn_name() -> server_fn::sse::SseStream<#item_type> {
                 server_fn::sse::SseStream::connect(#endpoint)
             }
@@ -532,7 +607,7 @@ fn generate_sse(input: ItemFn) -> TokenStream {
     } else {
         // Build URL with query parameters
         quote! {
-            #[cfg(target_arch = "wasm32")]
+            #[cfg(feature = "web")]
             #vis fn #fn_name(#(#param_names: #param_types),*) -> server_fn::sse::SseStream<#item_type> {
                 let req = #request_name { #(#param_names),* };
                 let query = serde_urlencoded::to_string(&req).unwrap_or_default();
@@ -697,9 +772,12 @@ fn generate_ws(input: ItemFn) -> TokenStream {
         quote! { _incoming }
     };
 
-    // Generate server-side code (non-WASM)
+    // Generate a unique handler function name for inventory registration
+    let handler_fn_name = format_ident!("__{}_handler", fn_name);
+
+    // Generate server-side code (server feature)
     let server_code = quote! {
-        #[cfg(not(target_arch = "wasm32"))]
+        #[cfg(feature = "server")]
         #vis async fn #fn_name(
             headers: axum::http::HeaderMap,
             uri: axum::http::Uri,
@@ -746,12 +824,27 @@ fn generate_ws(input: ItemFn) -> TokenStream {
                 }
             })
         }
+
+        // Auto-registration with inventory
+        #[cfg(feature = "server")]
+        fn #handler_fn_name() -> axum::routing::MethodRouter {
+            axum::routing::get(#fn_name)
+        }
+
+        #[cfg(feature = "server")]
+        server_fn::prelude::inventory::submit! {
+            server_fn::registry::ServerFunction::new(
+                axum::http::Method::GET,
+                #endpoint,
+                #handler_fn_name,
+            )
+        }
     };
 
-    // Generate client-side code (WASM)
+    // Generate client-side code (web feature)
     // Returns WsStream<In, Out> that connects to the endpoint
     let client_code = quote! {
-        #[cfg(target_arch = "wasm32")]
+        #[cfg(feature = "web")]
         #vis fn #fn_name() -> server_fn::ws::WsStream<#in_type, #out_type> {
             server_fn::ws::WsStream::connect(#endpoint)
         }

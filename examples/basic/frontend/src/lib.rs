@@ -1,94 +1,108 @@
-//! Frontend WASM entry point for axum-egui.
+//! Frontend egui application.
+//!
+//! This crate compiles to WASM and runs in the browser.
 
-use eframe::wasm_bindgen::{self, prelude::*};
+use basic_shared::{AppState, api};
 use server_fn::prelude::*;
 use std::sync::mpsc::{Receiver, Sender, channel};
+use wasm_bindgen::prelude::*;
 
 // ============================================================================
-// Server Functions - RPC (same signatures as backend)
+// WASM Entry Point
 // ============================================================================
 
-#[server]
-pub async fn greet(name: String) -> Result<String, ServerFnError> {
-    // This body is only used on the server; on WASM it generates HTTP call
-    unreachable!()
+#[wasm_bindgen(start)]
+pub fn main() {
+    eframe::WebLogger::init(log::LevelFilter::Debug).ok();
+
+    wasm_bindgen_futures::spawn_local(async {
+        let document = web_sys::window()
+            .expect("No window")
+            .document()
+            .expect("No document");
+
+        // Try to read initial state from the DOM
+        let initial_state: AppState = read_initial_state(&document).unwrap_or_default();
+
+        let canvas = document
+            .get_element_by_id("the_canvas_id")
+            .expect("Failed to find canvas")
+            .dyn_into::<web_sys::HtmlCanvasElement>()
+            .expect("Not a canvas element");
+
+        let web_options = eframe::WebOptions::default();
+
+        // Create the app with initial state
+        let app = ExampleApp::new(initial_state);
+
+        let start_result = eframe::WebRunner::new()
+            .start(canvas, web_options, Box::new(move |_cc| Ok(Box::new(app))))
+            .await;
+
+        if let Some(loading_text) = document.get_element_by_id("loading_text") {
+            match start_result {
+                Ok(_) => {
+                    loading_text.remove();
+                }
+                Err(e) => {
+                    loading_text.set_inner_html(
+                        "<p>The app has crashed. See the developer console for details.</p>",
+                    );
+                    panic!("Failed to start eframe: {e:?}");
+                }
+            }
+        }
+    });
 }
 
-#[server]
-pub async fn add(a: i32, b: i32) -> Result<i32, ServerFnError> {
-    unreachable!()
+fn read_initial_state<T: serde::de::DeserializeOwned>(document: &web_sys::Document) -> Option<T> {
+    let script = document.get_element_by_id("axum-egui-state")?;
+    let json = script.text_content()?;
+    serde_json::from_str(&json).ok()
 }
 
 // ============================================================================
-// Server Functions - SSE (same signatures as backend)
+// Example App
 // ============================================================================
 
-#[server(sse)]
-pub async fn counter() -> impl Stream<Item = i32> {
-    unreachable!()
-}
-
-// ============================================================================
-// Server Functions - WebSocket (same signatures as backend)
-// ============================================================================
-
-#[server(ws)]
-pub async fn echo(incoming: impl Stream<Item = String>) -> impl Stream<Item = String> {
-    unreachable!()
-}
-
-// ============================================================================
-// App State
-// ============================================================================
-
-/// Responses from API calls.
 enum ApiResponse {
     Greet(Result<String, ServerFnError>),
     Add(Result<i32, ServerFnError>),
 }
 
-/// The example app state.
-#[derive(Debug, serde::Serialize, serde::Deserialize)]
-#[serde(default)]
 pub struct ExampleApp {
-    pub label: String,
-    pub value: f32,
-    #[serde(skip)]
-    pub server_message: Option<String>,
-    #[serde(skip)]
-    pub add_result: Option<i32>,
-    #[serde(skip)]
-    response_rx: Option<Receiver<ApiResponse>>,
-    #[serde(skip)]
-    response_tx: Option<Sender<ApiResponse>>,
+    // State from server
+    label: String,
+    value: f32,
+    server_message: Option<String>,
+
+    // Local state
+    add_result: Option<i32>,
+    response_rx: Receiver<ApiResponse>,
+    response_tx: Sender<ApiResponse>,
+
     // SSE state
-    #[serde(skip)]
-    counter_stream: Option<SseStream<i32>>,
-    #[serde(skip)]
+    counter_stream: Option<server_fn::sse::SseStream<i32>>,
     counter_value: Option<i32>,
-    #[serde(skip)]
     counter_connected: bool,
+
     // WebSocket state
-    #[serde(skip)]
-    ws_echo: Option<WsStream<String, String>>,
-    #[serde(skip)]
+    ws_echo: Option<server_fn::ws::WsStream<String, String>>,
     ws_input: String,
-    #[serde(skip)]
     ws_messages: Vec<String>,
-    #[serde(skip)]
     ws_connected: bool,
 }
 
-impl Default for ExampleApp {
-    fn default() -> Self {
+impl ExampleApp {
+    pub fn new(state: AppState) -> Self {
         let (tx, rx) = channel();
         Self {
-            label: "Hello World!".to_owned(),
-            value: 2.7,
-            server_message: None,
+            label: state.label,
+            value: state.value,
+            server_message: state.server_message,
             add_result: None,
-            response_rx: Some(rx),
-            response_tx: Some(tx),
+            response_rx: rx,
+            response_tx: tx,
             counter_stream: None,
             counter_value: None,
             counter_connected: false,
@@ -98,60 +112,47 @@ impl Default for ExampleApp {
             ws_connected: false,
         }
     }
-}
 
-impl ExampleApp {
-    /// Call the greet server function.
     fn call_greet(&self, name: String) {
-        if let Some(tx) = &self.response_tx {
-            let tx = tx.clone();
-            wasm_bindgen_futures::spawn_local(async move {
-                let result = greet(name).await;
-                let _ = tx.send(ApiResponse::Greet(result));
-            });
-        }
+        let tx = self.response_tx.clone();
+        wasm_bindgen_futures::spawn_local(async move {
+            let result = api::greet(name).await;
+            let _ = tx.send(ApiResponse::Greet(result));
+        });
     }
 
-    /// Call the add server function.
     fn call_add(&self, a: i32, b: i32) {
-        if let Some(tx) = &self.response_tx {
-            let tx = tx.clone();
-            wasm_bindgen_futures::spawn_local(async move {
-                let result = add(a, b).await;
-                let _ = tx.send(ApiResponse::Add(result));
-            });
-        }
+        let tx = self.response_tx.clone();
+        wasm_bindgen_futures::spawn_local(async move {
+            let result = api::add(a, b).await;
+            let _ = tx.send(ApiResponse::Add(result));
+        });
     }
 
-    /// Start the counter SSE stream.
     fn start_counter(&mut self) {
         if self.counter_stream.is_none() {
-            self.counter_stream = Some(counter());
+            self.counter_stream = Some(api::counter());
             self.counter_connected = false;
         }
     }
 
-    /// Stop the counter SSE stream.
     fn stop_counter(&mut self) {
         self.counter_stream = None;
         self.counter_connected = false;
     }
 
-    /// Connect the WebSocket echo.
     fn connect_ws(&mut self) {
         if self.ws_echo.is_none() {
-            self.ws_echo = Some(echo());
+            self.ws_echo = Some(api::echo());
             self.ws_connected = false;
         }
     }
 
-    /// Disconnect the WebSocket.
     fn disconnect_ws(&mut self) {
         self.ws_echo = None;
         self.ws_connected = false;
     }
 
-    /// Send a message through the WebSocket.
     fn send_ws(&mut self) {
         if let Some(ws) = &self.ws_echo {
             if !self.ws_input.is_empty() {
@@ -162,31 +163,26 @@ impl ExampleApp {
         }
     }
 
-    /// Process any pending API responses.
     fn process_responses(&mut self) {
-        if let Some(rx) = &self.response_rx {
-            while let Ok(response) = rx.try_recv() {
-                match response {
-                    ApiResponse::Greet(Ok(msg)) => self.server_message = Some(msg),
-                    ApiResponse::Greet(Err(e)) => {
-                        log::error!("Greet error: {e}");
-                        self.server_message = Some(format!("Error: {e}"));
-                    }
-                    ApiResponse::Add(Ok(result)) => self.add_result = Some(result),
-                    ApiResponse::Add(Err(e)) => {
-                        log::error!("Add error: {e}");
-                        self.server_message = Some(format!("Error: {e}"));
-                    }
+        // Process RPC responses
+        while let Ok(response) = self.response_rx.try_recv() {
+            match response {
+                ApiResponse::Greet(Ok(msg)) => self.server_message = Some(msg),
+                ApiResponse::Greet(Err(e)) => {
+                    log::error!("Greet error: {e}");
+                    self.server_message = Some(format!("Error: {e}"));
+                }
+                ApiResponse::Add(Ok(result)) => self.add_result = Some(result),
+                ApiResponse::Add(Err(e)) => {
+                    log::error!("Add error: {e}");
+                    self.server_message = Some(format!("Error: {e}"));
                 }
             }
         }
 
         // Process SSE events
         if let Some(stream) = &mut self.counter_stream {
-            // Update connection state
             self.counter_connected = stream.is_connected();
-
-            // Get all pending events
             for value in stream.try_iter() {
                 self.counter_value = Some(value);
             }
@@ -195,10 +191,8 @@ impl ExampleApp {
         // Process WebSocket events
         if let Some(ws) = &mut self.ws_echo {
             self.ws_connected = ws.is_connected();
-
             for msg in ws.try_iter() {
                 self.ws_messages.push(format!("< {}", msg));
-                // Keep only last 20 messages
                 if self.ws_messages.len() > 20 {
                     self.ws_messages.remove(0);
                 }
@@ -209,7 +203,6 @@ impl ExampleApp {
 
 impl eframe::App for ExampleApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
-        // Process any pending API responses
         self.process_responses();
 
         // Request continuous repaints while SSE or WebSocket is active
@@ -218,7 +211,7 @@ impl eframe::App for ExampleApp {
         }
 
         egui::TopBottomPanel::top("top_panel").show(ctx, |ui| {
-            egui::MenuBar::new().ui(ui, |ui| {
+            ui.horizontal(|ui| {
                 egui::widgets::global_theme_preference_buttons(ui);
             });
         });
@@ -268,7 +261,6 @@ impl eframe::App for ExampleApp {
                         self.stop_counter();
                     }
 
-                    // Show connection status
                     if is_running {
                         let status = if self.counter_connected {
                             "Connected"
@@ -281,7 +273,6 @@ impl eframe::App for ExampleApp {
 
                 if let Some(value) = self.counter_value {
                     ui.label(format!("Counter: {value}"));
-                    // Visual progress bar
                     ui.add(
                         egui::ProgressBar::new(value as f32 / 100.0).text(format!("{value}/100")),
                     );
@@ -305,7 +296,6 @@ impl eframe::App for ExampleApp {
                         self.disconnect_ws();
                     }
 
-                    // Show connection status
                     if is_connected {
                         let status = if self.ws_connected {
                             "Connected"
@@ -316,7 +306,6 @@ impl eframe::App for ExampleApp {
                     }
                 });
 
-                // Message input and send
                 if self.ws_echo.is_some() {
                     ui.horizontal(|ui| {
                         let response = ui.text_edit_singleline(&mut self.ws_input);
@@ -328,7 +317,6 @@ impl eframe::App for ExampleApp {
                         }
                     });
 
-                    // Message log
                     egui::ScrollArea::vertical()
                         .max_height(100.0)
                         .show(ui, |ui| {
@@ -359,64 +347,4 @@ impl eframe::App for ExampleApp {
             });
         });
     }
-}
-
-// ============================================================================
-// WASM Entry Point
-// ============================================================================
-
-#[wasm_bindgen(start)]
-pub fn main() {
-    eframe::WebLogger::init(log::LevelFilter::Debug).ok();
-
-    wasm_bindgen_futures::spawn_local(async {
-        let document = web_sys::window()
-            .expect("No window")
-            .document()
-            .expect("No document");
-
-        // Try to read initial state from the DOM
-        let mut initial_state: ExampleApp = read_initial_state(&document).unwrap_or_default();
-
-        // Set up the channel for API responses
-        let (tx, rx) = channel();
-        initial_state.response_tx = Some(tx);
-        initial_state.response_rx = Some(rx);
-
-        let canvas = document
-            .get_element_by_id("the_canvas_id")
-            .expect("Failed to find canvas")
-            .dyn_into::<web_sys::HtmlCanvasElement>()
-            .expect("Not a canvas element");
-
-        let web_options = eframe::WebOptions::default();
-
-        let start_result = eframe::WebRunner::new()
-            .start(
-                canvas,
-                web_options,
-                Box::new(move |_cc| Ok(Box::new(initial_state))),
-            )
-            .await;
-
-        if let Some(loading_text) = document.get_element_by_id("loading_text") {
-            match start_result {
-                Ok(_) => {
-                    loading_text.remove();
-                }
-                Err(e) => {
-                    loading_text.set_inner_html(
-                        "<p>The app has crashed. See the developer console for details.</p>",
-                    );
-                    panic!("Failed to start eframe: {e:?}");
-                }
-            }
-        }
-    });
-}
-
-fn read_initial_state<T: serde::de::DeserializeOwned>(document: &web_sys::Document) -> Option<T> {
-    let script = document.get_element_by_id("axum-egui-state")?;
-    let json = script.text_content()?;
-    serde_json::from_str(&json).ok()
 }

@@ -1,0 +1,6 @@
+# Cargo configuration for axum-egui workspace
+
+# Enable unstable artifact dependencies (RFC 3028)
+# This allows the server to depend on the frontend WASM as a build artifact
+[unstable]
+bindeps = true

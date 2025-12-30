@@ -2,7 +2,7 @@
 //!
 //! This module provides types for both server and client sides of SSE connections.
 //!
-//! # Server Usage
+//! # Server Usage (requires `server` feature)
 //! ```ignore
 //! #[server(sse)]
 //! pub async fn counter() -> impl Stream<Item = i32> {
@@ -15,7 +15,7 @@
 //! }
 //! ```
 //!
-//! # Client Usage
+//! # Client Usage (requires `web` feature)
 //! ```ignore
 //! let stream = counter();
 //! // In your egui update loop:
@@ -86,6 +86,7 @@ impl ReconnectConfig {
     }
 
     /// Calculate delay for a given attempt number using exponential backoff with jitter.
+    #[cfg(any(feature = "server", feature = "web"))]
     pub fn delay_for_attempt(&self, attempt: u32) -> u32 {
         let base = self.base_delay_ms as f64;
         let exponential = base * 2_f64.powi(attempt as i32);
@@ -99,13 +100,14 @@ impl ReconnectConfig {
     }
 }
 
-/// Platform-specific random number generation
-#[cfg(target_arch = "wasm32")]
+/// Platform-specific random number generation (web)
+#[cfg(feature = "web")]
 fn random_f64() -> f64 {
     js_sys::Math::random()
 }
 
-#[cfg(not(target_arch = "wasm32"))]
+/// Platform-specific random number generation (server)
+#[cfg(all(feature = "server", not(feature = "web")))]
 fn random_f64() -> f64 {
     use std::collections::hash_map::RandomState;
     use std::hash::{BuildHasher, Hasher};
@@ -116,10 +118,10 @@ fn random_f64() -> f64 {
 }
 
 // ============================================================================
-// Client-side SSE Stream (WASM only)
+// Client-side SSE Stream (web feature only)
 // ============================================================================
 
-#[cfg(target_arch = "wasm32")]
+#[cfg(feature = "web")]
 mod client {
     use super::*;
     use gloo_net::eventsource::futures::EventSource;
@@ -325,14 +327,14 @@ mod client {
     }
 }
 
-#[cfg(target_arch = "wasm32")]
+#[cfg(feature = "web")]
 pub use client::*;
 
 // ============================================================================
-// Server-side SSE helpers (non-WASM only)
+// Server-side SSE helpers (server feature only)
 // ============================================================================
 
-#[cfg(not(target_arch = "wasm32"))]
+#[cfg(feature = "server")]
 mod server {
     use axum::response::sse::{Event, KeepAlive, Sse};
     use futures::Stream;
@@ -357,5 +359,5 @@ mod server {
     }
 }
 
-#[cfg(not(target_arch = "wasm32"))]
+#[cfg(feature = "server")]
 pub use server::*;

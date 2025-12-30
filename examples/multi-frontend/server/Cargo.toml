@@ -1,0 +1,36 @@
+[package]
+name = "multi-frontend-server"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+[[bin]]
+name = "multi-frontend-server"
+path = "src/main.rs"
+
+[dependencies]
+# Shared types and server functions
+multi-frontend-shared = { path = "../shared", features = ["server"] }
+
+# axum-egui framework
+axum-egui = { path = "../../../axum-egui", features = ["server"] }
+server-fn = { workspace = true, features = ["server"] }
+
+# Web framework
+axum = { workspace = true }
+tokio = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+
+# Asset embedding (with path interpolation for build.rs env vars)
+rust-embed = { workspace = true, features = ["interpolate-folder-path"] }
+
+# Serialization
+serde = { workspace = true }
+serde_json = { workspace = true }
+
+# Artifact dependencies: both frontends (RFC 3028)
+[build-dependencies]
+axum-egui-build = { path = "../../../axum-egui-build" }
+user-frontend = { path = "../user-frontend", artifact = "cdylib", target = "wasm32-unknown-unknown" }
+admin-frontend = { path = "../admin-frontend", artifact = "cdylib", target = "wasm32-unknown-unknown" }

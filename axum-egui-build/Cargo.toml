@@ -1,0 +1,10 @@
+[package]
+name = "axum-egui-build"
+version = "0.1.0"
+edition = "2024"
+description = "Build-time utilities for axum-egui (processes WASM frontends)"
+license = "MIT OR Apache-2.0"
+rust-version = "1.85"
+
+# Zero dependencies - just std
+[dependencies]

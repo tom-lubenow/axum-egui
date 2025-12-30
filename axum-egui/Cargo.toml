@@ -5,12 +5,21 @@ edition.workspace = true
 rust-version.workspace = true
 description = "Seamlessly embed egui frontends in axum backends"
 
+[features]
+default = ["server"]
+# Enable server-side features (axum integration, auto-registration)
+server = ["server-fn/server", "dep:axum", "dep:rust-embed", "dep:mime_guess"]
+# Enable web/WASM client features
+web = ["server-fn/web"]
+# Enable MessagePack encoding
+msgpack = ["server-fn/msgpack"]
+
 [dependencies]
-axum = { workspace = true }
+axum = { workspace = true, optional = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
-rust-embed = { workspace = true }
-mime_guess = { workspace = true }
+rust-embed = { workspace = true, optional = true }
+mime_guess = { workspace = true, optional = true }
 
 # Re-export server-fn
 server-fn = { workspace = true }

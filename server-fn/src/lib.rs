@@ -3,6 +3,12 @@
 //! This crate provides macros and runtime support for defining functions that
 //! run on the server but can be called from the client.
 //!
+//! # Features
+//!
+//! - `server` - Enable server-side functionality (axum handlers, context, etc.)
+//! - `web` - Enable client-side functionality (HTTP calls, SSE/WS clients)
+//! - `msgpack` - Enable MessagePack encoding for smaller/faster payloads
+//!
 //! # RPC Functions
 //!
 //! Simple request/response pattern:
@@ -16,7 +22,7 @@
 //! }
 //! ```
 //!
-//! # Request Context
+//! # Request Context (server feature only)
 //!
 //! Access HTTP request details (headers, cookies, IP) within server functions:
 //!
@@ -56,9 +62,19 @@
 //! }
 //! ```
 
+// Context module - only available on server
+#[cfg(feature = "server")]
 pub mod context;
+
+// SSE module - different implementations for server vs web
 pub mod sse;
+
+// WebSocket module - different implementations for server vs web
 pub mod ws;
+
+// Registry for auto-registration of server functions
+#[cfg(feature = "server")]
+pub mod registry;
 
 pub use server_fn_macro::server;
 
@@ -157,7 +173,7 @@ impl<E> From<&str> for ServerFnError<E> {
     }
 }
 
-#[cfg(target_arch = "wasm32")]
+#[cfg(feature = "web")]
 impl<E> From<gloo_net::Error> for ServerFnError<E> {
     fn from(e: gloo_net::Error) -> Self {
         ServerFnError::Request(e.to_string())
@@ -177,46 +193,54 @@ pub mod prelude {
     #[cfg(feature = "msgpack")]
     pub use rmp_serde;
 
-    // Request context
-    pub use super::context::{RequestContext, request_context, try_request_context};
-
-    // Custom context (extractors)
-    pub use super::context::{try_use_context, use_context};
-
-    #[cfg(not(target_arch = "wasm32"))]
-    pub use super::context::{provide_context, with_context, with_full_context};
+    // Request context (server only)
+    #[cfg(feature = "server")]
+    pub use super::context::{
+        RequestContext, provide_context, request_context, try_request_context, try_use_context,
+        use_context, with_context, with_full_context,
+    };
 
     // SSE types
     pub use super::sse::ReconnectConfig;
 
-    #[cfg(target_arch = "wasm32")]
+    #[cfg(feature = "web")]
     pub use super::sse::{ConnectionState, SseStream};
 
-    #[cfg(not(target_arch = "wasm32"))]
+    #[cfg(feature = "server")]
     pub use super::sse::into_sse_response;
 
     // WebSocket types
-    #[cfg(target_arch = "wasm32")]
+    #[cfg(feature = "web")]
     pub use super::ws::{WsConnectionState, WsStream};
 
-    #[cfg(not(target_arch = "wasm32"))]
+    #[cfg(feature = "server")]
     pub use super::ws::{WsHandler, handle_socket, ws_upgrade};
 
-    #[cfg(not(target_arch = "wasm32"))]
+    // Server-side re-exports
+    #[cfg(feature = "server")]
     pub use axum;
 
-    #[cfg(not(target_arch = "wasm32"))]
+    #[cfg(feature = "server")]
     pub use tracing;
 
-    #[cfg(not(target_arch = "wasm32"))]
+    #[cfg(feature = "server")]
     pub use async_stream;
 
-    #[cfg(not(target_arch = "wasm32"))]
+    #[cfg(feature = "server")]
     pub use futures;
 
-    #[cfg(not(target_arch = "wasm32"))]
+    #[cfg(feature = "server")]
     pub use futures::Stream;
 
-    #[cfg(target_arch = "wasm32")]
+    // Registry for auto-registration
+    #[cfg(feature = "server")]
+    pub use super::registry::ServerFunction;
+
+    // Re-export inventory for the macro-generated code
+    #[cfg(feature = "server")]
+    pub use inventory;
+
+    // Web-side re-exports
+    #[cfg(feature = "web")]
     pub use gloo_net;
 }

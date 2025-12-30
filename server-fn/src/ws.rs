@@ -1,6 +1,6 @@
 //! WebSocket support for bidirectional communication.
 //!
-//! # Server Usage
+//! # Server Usage (requires `server` feature)
 //! ```ignore
 //! #[server(ws)]
 //! pub async fn echo(incoming: impl Stream<Item = String>) -> impl Stream<Item = String> {
@@ -8,7 +8,7 @@
 //! }
 //! ```
 //!
-//! # Client Usage
+//! # Client Usage (requires `web` feature)
 //! ```ignore
 //! let ws = echo();
 //! ws.send("Hello".to_string());
@@ -20,10 +20,10 @@
 pub use crate::sse::ReconnectConfig;
 
 // ============================================================================
-// Client-side WebSocket Stream (WASM only)
+// Client-side WebSocket Stream (web feature only)
 // ============================================================================
 
-#[cfg(target_arch = "wasm32")]
+#[cfg(feature = "web")]
 mod client {
     use super::*;
     use gloo_net::websocket::{Message, futures::WebSocket};
@@ -303,14 +303,14 @@ mod client {
     }
 }
 
-#[cfg(target_arch = "wasm32")]
+#[cfg(feature = "web")]
 pub use client::*;
 
 // ============================================================================
-// Server-side WebSocket helpers (non-WASM only)
+// Server-side WebSocket helpers (server feature only)
 // ============================================================================
 
-#[cfg(not(target_arch = "wasm32"))]
+#[cfg(feature = "server")]
 mod server {
     use axum::{
         extract::ws::{Message, WebSocket, WebSocketUpgrade},
@@ -395,5 +395,5 @@ mod server {
     }
 }
 
-#[cfg(not(target_arch = "wasm32"))]
+#[cfg(feature = "server")]
 pub use server::*;

@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>axum-egui Example</title>
+    <style>
+        html, body {
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            background: #1a1a1a;
+        }
+        canvas {
+            width: 100% !important;
+            height: 100% !important;
+        }
+        #loading_text {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            color: #888;
+            font-family: system-ui, -apple-system, sans-serif;
+            font-size: 1.2em;
+        }
+    </style>
+</head>
+<body>
+    <!--AXUM_EGUI_INITIAL_STATE-->
+    <div id="loading_text">Loading...</div>
+    <canvas id="the_canvas_id"></canvas>
+    <script type="module">
+        import init from './basic_example.js';
+        init();
+    </script>
+</body>
+</html>
