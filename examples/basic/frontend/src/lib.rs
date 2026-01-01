@@ -2,9 +2,9 @@
 //!
 //! This crate compiles to WASM and runs in the browser.
 
-use basic_shared::api::{self, ApiError};
 use basic_shared::AppState;
-use std::sync::mpsc::{channel, Receiver, Sender};
+use basic_shared::api::{self, ApiError};
+use std::sync::mpsc::{Receiver, Sender, channel};
 use wasm_bindgen::prelude::*;
 
 // ============================================================================
@@ -186,7 +186,10 @@ impl eframe::App for ExampleApp {
                     ui.label(format!("Add result: {result}"));
                 }
                 if let Some(whoami) = &self.whoami_result {
-                    ui.label(format!("Whoami: {} (at {})", whoami.message, whoami.timestamp));
+                    ui.label(format!(
+                        "Whoami: {} (at {})",
+                        whoami.message, whoami.timestamp
+                    ));
                 }
             });
 

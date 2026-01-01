@@ -53,15 +53,11 @@ fn get_initial_state() -> AdminApp {
     let window = web_sys::window().expect("no window");
     let document = window.document().expect("no document");
 
-    if let Some(element) = document.get_element_by_id("axum-egui-state") {
-        if let Some(json) = element.text_content() {
-            if let Ok(state) = serde_json::from_str(&json) {
-                return state;
-            }
-        }
-    }
-
-    AdminApp::default()
+    document
+        .get_element_by_id("axum-egui-state")
+        .and_then(|el| el.text_content())
+        .and_then(|json| serde_json::from_str(&json).ok())
+        .unwrap_or_default()
 }
 
 #[wasm_bindgen(start)]

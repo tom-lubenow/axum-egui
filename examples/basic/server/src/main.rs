@@ -7,7 +7,7 @@
 
 use axum::routing::{get, post};
 use axum::{Json, Router};
-use basic_shared::{api, AppState};
+use basic_shared::{AppState, api};
 use rust_embed::RustEmbed;
 use std::net::SocketAddr;
 use std::time::{SystemTime, UNIX_EPOCH};

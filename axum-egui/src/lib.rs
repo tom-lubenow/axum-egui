@@ -42,7 +42,7 @@
 mod server {
     use axum::{
         body::Body,
-        http::{header, StatusCode, Uri},
+        http::{StatusCode, Uri, header},
         response::{Html, IntoResponse, Response},
     };
     use rust_embed::RustEmbed;
@@ -250,7 +250,9 @@ mod tests {
     #[tokio::test]
     async fn static_handler_returns_404_when_no_index() {
         let uri: Uri = "/unknown".parse().unwrap();
-        let response = static_handler::<TestAssetsNoIndex>(uri).await.into_response();
+        let response = static_handler::<TestAssetsNoIndex>(uri)
+            .await
+            .into_response();
 
         assert_eq!(response.status(), StatusCode::NOT_FOUND);
     }

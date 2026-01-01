@@ -22,17 +22,26 @@ jobs:
       - name: Check formatting (example frontends)
         run: cd examples/basic/frontend && nix develop ../../..# --command cargo fmt -- --check
 
-      - name: Run clippy (workspace)
-        run: nix develop --command cargo clippy --workspace --all-features -- -D warnings
+      - name: Run clippy (library crates)
+        run: nix develop --command cargo clippy -p axum-egui -p axum-egui-build --all-features -- -D warnings
 
-      - name: Run clippy (example frontends)
-        run: cd examples/basic/frontend && nix develop ../../..# --command cargo clippy --target wasm32-unknown-unknown -- -D warnings
+      - name: Run clippy (example servers)
+        run: nix develop --command cargo clippy -p basic-server -p multi-frontend-server -- -D warnings
 
-      - name: Check (workspace)
-        run: nix develop --command cargo check --workspace --all-features
+      - name: Run clippy (example frontends - wasm32)
+        run: |
+          nix develop --command cargo clippy -p basic-frontend --target wasm32-unknown-unknown -- -D warnings
+          nix develop --command cargo clippy -p user-frontend --target wasm32-unknown-unknown -- -D warnings
+          nix develop --command cargo clippy -p admin-frontend --target wasm32-unknown-unknown -- -D warnings
 
-      - name: Check (example frontends wasm32)
-        run: cd examples/basic/frontend && nix develop ../../..# --command cargo check --target wasm32-unknown-unknown
+      - name: Check (library crates)
+        run: nix develop --command cargo check -p axum-egui -p axum-egui-build --all-features
+
+      - name: Check (example frontends - wasm32)
+        run: |
+          nix develop --command cargo check -p basic-frontend --target wasm32-unknown-unknown
+          nix develop --command cargo check -p user-frontend --target wasm32-unknown-unknown
+          nix develop --command cargo check -p admin-frontend --target wasm32-unknown-unknown
 
       - name: Run tests
         run: nix develop --command cargo nextest run -p axum-egui -p axum-egui-build

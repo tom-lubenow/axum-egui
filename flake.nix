@@ -16,7 +16,8 @@
           inherit system overlays;
         };
 
-        rustToolchain = pkgs.rust-bin.stable.latest.default.override {
+        # Nightly required for artifact dependencies (RFC 3028 / -Z bindeps)
+        rustToolchain = pkgs.rust-bin.nightly.latest.default.override {
           extensions = [ "rust-src" "rust-analyzer" "clippy" ];
           targets = [ "wasm32-unknown-unknown" ];
         };
@@ -34,6 +35,7 @@
             # Development tools
             cargo-watch
             cargo-edit
+            cargo-nextest
 
             # System dependencies for native builds (optional)
             pkg-config

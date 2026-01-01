@@ -3,11 +3,11 @@
 //! - User frontend at `/`
 //! - Admin frontend at `/admin`
 
+use axum::Router;
 use axum::extract::Request;
 use axum::http::Uri;
 use axum::response::IntoResponse;
 use axum::routing::get;
-use axum::Router;
 use rust_embed::RustEmbed;
 use serde::{Deserialize, Serialize};
 use std::net::SocketAddr;
