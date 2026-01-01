@@ -18,7 +18,7 @@ jobs:
       - uses: DeterminateSystems/magic-nix-cache-action@main
 
       - name: Run tests
-        run: nix develop --command cargo test --workspace
+        run: nix develop --command cargo nextest run -p axum-egui -p axum-egui-build
 
       - name: Publish axum-egui-build
         run: nix develop --command cargo publish -p axum-egui-build
