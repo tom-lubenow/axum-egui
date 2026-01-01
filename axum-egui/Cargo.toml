@@ -26,7 +26,7 @@ tokio-stream = { version = "0.1", optional = true }
 futures-util = { version = "0.3", optional = true }
 
 # Macro support
-axum-egui-macro = { path = "../axum-egui-macro" }
+axum-egui-macro = { version = "0.2.0", path = "../axum-egui-macro" }
 
 # Client-side dependencies
 gloo-net = { version = "0.6", optional = true }
