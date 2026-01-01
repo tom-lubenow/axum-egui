@@ -205,7 +205,7 @@ dependencies = [
 
 [[package]]
 name = "axum-egui"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "axum",
  "axum-egui-macro",
@@ -227,15 +227,19 @@ dependencies = [
 
 [[package]]
 name = "axum-egui-build"
-version = "0.1.0"
+version = "0.2.0"
 
 [[package]]
 name = "axum-egui-macro"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
+ "axum",
  "proc-macro2",
  "quote",
+ "serde",
+ "serde_json",
  "syn",
+ "tokio",
 ]
 
 [[package]]
