@@ -235,3 +235,91 @@ mod client {
 
 #[cfg(feature = "client")]
 pub use client::*;
+
+// ============================================================================
+// Tests
+// ============================================================================
+
+#[cfg(all(test, feature = "server"))]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn event_new_creates_empty_event() {
+        let event = Event::new();
+        // Should not panic
+        let _: axum::response::sse::Event = event.into();
+    }
+
+    #[test]
+    fn event_default_creates_empty_event() {
+        let event = Event::default();
+        let _: axum::response::sse::Event = event.into();
+    }
+
+    #[test]
+    fn event_json_data_serializes_primitives() {
+        let event = Event::new().json_data(42).unwrap();
+        let _: axum::response::sse::Event = event.into();
+    }
+
+    #[test]
+    fn event_json_data_serializes_structs() {
+        #[derive(serde::Serialize)]
+        struct TestData {
+            name: String,
+            value: i32,
+        }
+
+        let data = TestData {
+            name: "test".into(),
+            value: 123,
+        };
+        let event = Event::new().json_data(data).unwrap();
+        let _: axum::response::sse::Event = event.into();
+    }
+
+    #[test]
+    fn event_data_sets_raw_string() {
+        let event = Event::new().data("raw data");
+        let _: axum::response::sse::Event = event.into();
+    }
+
+    #[test]
+    fn event_with_name() {
+        let event = Event::new().event("custom-event").data("payload");
+        let _: axum::response::sse::Event = event.into();
+    }
+
+    #[test]
+    fn event_with_id() {
+        let event = Event::new().id("msg-123").data("payload");
+        let _: axum::response::sse::Event = event.into();
+    }
+
+    #[test]
+    fn event_with_retry() {
+        use std::time::Duration;
+        let event = Event::new()
+            .retry(Duration::from_secs(5))
+            .data("payload");
+        let _: axum::response::sse::Event = event.into();
+    }
+
+    #[test]
+    fn event_with_comment() {
+        let event = Event::new().comment("this is a comment").data("payload");
+        let _: axum::response::sse::Event = event.into();
+    }
+
+    #[test]
+    fn event_chaining() {
+        let event = Event::new()
+            .event("update")
+            .id("1")
+            .json_data(serde_json::json!({"count": 42}))
+            .unwrap()
+            .comment("status update");
+        let _: axum::response::sse::Event = event.into();
+    }
+}
