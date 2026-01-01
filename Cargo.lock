@@ -208,6 +208,7 @@ name = "axum-egui"
 version = "0.1.0"
 dependencies = [
  "axum",
+ "axum-egui-macro",
  "futures-util",
  "gloo-net",
  "http-body-util",
@@ -227,6 +228,15 @@ dependencies = [
 [[package]]
 name = "axum-egui-build"
 version = "0.1.0"
+
+[[package]]
+name = "axum-egui-macro"
+version = "0.1.0"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn",
+]
 
 [[package]]
 name = "backtrace"
@@ -280,6 +290,8 @@ dependencies = [
 name = "basic-shared"
 version = "0.1.0"
 dependencies = [
+ "axum",
+ "axum-egui",
  "gloo-net",
  "serde",
  "serde_json",

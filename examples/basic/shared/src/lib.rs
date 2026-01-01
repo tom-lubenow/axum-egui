@@ -6,6 +6,7 @@
 //! - Web: makes HTTP calls to the server
 
 pub mod api;
+pub mod server_fns;
 
 // Re-export for convenience
 pub use api::*;

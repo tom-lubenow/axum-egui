@@ -2,6 +2,7 @@
 members = [
     "axum-egui",
     "axum-egui-build",
+    "axum-egui-macro",
     # Basic example with separate frontend/server crates
     "examples/basic/shared",
     "examples/basic/frontend",
@@ -19,6 +20,7 @@ resolver = "2"
 default-members = [
     "axum-egui",
     "axum-egui-build",
+    "axum-egui-macro",
     "examples/basic/shared",
     "examples/basic/server",
     "examples/multi-frontend/shared",

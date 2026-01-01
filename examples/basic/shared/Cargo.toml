@@ -7,12 +7,20 @@ publish = false
 [features]
 default = []
 # Web/WASM: enables browser client calls
-web = ["dep:gloo-net"]
+web = ["dep:gloo-net", "axum-egui/client"]
+# Server-side
+server = ["dep:axum", "axum-egui/server"]
 
 [dependencies]
 # Core dependencies (both targets)
 serde = { workspace = true }
 serde_json = { workspace = true }
+
+# axum-egui for server functions
+axum-egui = { path = "../../../axum-egui", default-features = false }
+
+# Server-side dependencies
+axum = { workspace = true, optional = true }
 
 # Web-only (WASM fetch)
 gloo-net = { version = "0.6", optional = true }

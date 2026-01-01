@@ -2,19 +2,19 @@
 //!
 //! This server:
 //! - Serves the embedded frontend WASM app
-//! - Provides API endpoints for the frontend
+//! - Provides API endpoints using the #[server] macro
 //! - Demonstrates simple RPC patterns
 //! - Provides SSE streaming for real-time updates
 
 use axum::routing::{get, post};
 use axum::{Json, Router};
 use axum_egui::sse::{Event, KeepAlive, Sse};
-use basic_shared::{AppState, api};
+use basic_shared::{AppState, api, server_fns};
 use futures_util::stream::{self, Stream};
 use rust_embed::RustEmbed;
 use std::convert::Infallible;
 use std::net::SocketAddr;
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::Duration;
 
 // Embed the frontend assets built by build.rs
 // Convention: {CRATE_NAME}_DIST
@@ -32,7 +32,7 @@ async fn index() -> axum_egui::App<AppState, Assets> {
 }
 
 // ============================================================================
-// API Handlers
+// API Handlers (legacy - kept for backwards compatibility)
 // ============================================================================
 
 async fn add_handler(Json(req): Json<api::AddRequest>) -> Json<api::AddResponse> {
@@ -48,6 +48,7 @@ async fn greet_handler(Json(req): Json<api::GreetRequest>) -> Json<api::GreetRes
 }
 
 async fn whoami_handler() -> Json<api::WhoamiResponse> {
+    use std::time::{SystemTime, UNIX_EPOCH};
     let timestamp = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .unwrap()
@@ -82,10 +83,15 @@ async fn main() {
 
     let app = Router::new()
         .route("/", get(index))
-        // API endpoints
+        // API endpoints (legacy - manual implementation)
         .route("/api/add", post(add_handler))
         .route("/api/greet", post(greet_handler))
         .route("/api/whoami", get(whoami_handler))
+        // API endpoints (using #[server] macro - auto-generated handlers)
+        // The macro generates {fn_name}_handler functions
+        .route("/api/v2/add", post(server_fns::add_handler))
+        .route("/api/v2/greet", post(server_fns::greet_handler))
+        .route("/api/v2/whoami", get(server_fns::whoami_handler))
         // SSE endpoint for real-time updates
         .route("/api/counter", get(counter_sse))
         // Serve static assets

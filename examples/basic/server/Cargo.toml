@@ -10,7 +10,7 @@ path = "src/main.rs"
 
 [dependencies]
 # Shared types
-basic-shared = { path = "../shared" }
+basic-shared = { path = "../shared", features = ["server"] }
 
 # axum-egui framework
 axum-egui = { path = "../../../axum-egui", features = ["server"] }
