@@ -1,17 +1,19 @@
 //! axum-egui: Seamlessly embed egui frontends in axum backends.
 //!
 //! This crate provides utilities for serving egui WASM applications from axum,
-//! with support for server-side initial state injection.
+//! with support for server-side initial state injection and real-time updates.
 //!
 //! # Features
 //!
 //! - `App<T>` response wrapper for serving egui apps with initial state
 //! - Static file serving utilities for embedded assets
+//! - Server-Sent Events (SSE) for real-time server-to-client updates
 //!
-//! # Example
+//! # Server Example
 //!
 //! ```ignore
 //! use axum::{Router, routing::get};
+//! use axum_egui::sse::{Sse, Event, KeepAlive};
 //! use rust_embed::RustEmbed;
 //!
 //! #[derive(RustEmbed)]
@@ -25,10 +27,20 @@
 //!     axum_egui::App::new(MyApp { counter: 42 })
 //! }
 //!
+//! // SSE endpoint for real-time updates
+//! async fn events() -> Sse<impl futures_util::Stream<Item = Result<Event, std::convert::Infallible>>> {
+//!     use futures_util::stream;
+//!     let stream = stream::repeat_with(|| {
+//!         Ok(Event::new().json_data(42).unwrap())
+//!     });
+//!     Sse::new(stream).keep_alive(KeepAlive::default())
+//! }
+//!
 //! #[tokio::main]
 //! async fn main() {
 //!     let app = Router::new()
 //!         .route("/", get(index))
+//!         .route("/events", get(events))
 //!         .fallback(axum_egui::static_handler::<Assets>);
 //!     // ...
 //! }
@@ -135,10 +147,20 @@ mod server {
 #[cfg(feature = "server")]
 pub use server::{App, static_handler};
 
+// ============================================================================
+// SSE (Server-Sent Events) support
+// ============================================================================
+
+#[cfg(any(feature = "server", feature = "client"))]
+pub mod sse;
+
 /// Prelude module for convenient imports.
 pub mod prelude {
     #[cfg(feature = "server")]
     pub use crate::{App, static_handler};
+
+    #[cfg(feature = "server")]
+    pub use crate::sse::{Event, KeepAlive, Sse, SseExt};
 }
 
 #[cfg(all(test, feature = "server"))]

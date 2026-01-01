@@ -28,6 +28,9 @@ rust-embed = { workspace = true, features = ["interpolate-folder-path"] }
 serde = { workspace = true }
 serde_json = { workspace = true }
 
+# Streaming
+futures-util = "0.3"
+
 # Artifact dependency: the frontend WASM (RFC 3028)
 # This automatically builds the frontend for wasm32 and provides the path
 [build-dependencies]

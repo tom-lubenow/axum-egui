@@ -4,13 +4,17 @@
 //! - Serves the embedded frontend WASM app
 //! - Provides API endpoints for the frontend
 //! - Demonstrates simple RPC patterns
+//! - Provides SSE streaming for real-time updates
 
 use axum::routing::{get, post};
 use axum::{Json, Router};
+use axum_egui::sse::{Event, KeepAlive, Sse};
 use basic_shared::{AppState, api};
+use futures_util::stream::{self, Stream};
 use rust_embed::RustEmbed;
+use std::convert::Infallible;
 use std::net::SocketAddr;
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 // Embed the frontend assets built by build.rs
 // Convention: {CRATE_NAME}_DIST
@@ -54,6 +58,24 @@ async fn whoami_handler() -> Json<api::WhoamiResponse> {
     })
 }
 
+// ============================================================================
+// SSE Handlers
+// ============================================================================
+
+/// SSE endpoint that streams a counter every second.
+async fn counter_sse() -> Sse<impl Stream<Item = Result<axum::response::sse::Event, Infallible>>> {
+    let stream = stream::unfold(0, |count| async move {
+        tokio::time::sleep(Duration::from_secs(1)).await;
+        let event = Event::new()
+            .json_data(count)
+            .unwrap_or_else(|_| Event::new().data("error"))
+            .into();
+        Some((Ok(event), count + 1))
+    });
+
+    Sse::new(stream).keep_alive(KeepAlive::default())
+}
+
 #[tokio::main]
 async fn main() {
     tracing_subscriber::fmt::init();
@@ -64,6 +86,8 @@ async fn main() {
         .route("/api/add", post(add_handler))
         .route("/api/greet", post(greet_handler))
         .route("/api/whoami", get(whoami_handler))
+        // SSE endpoint for real-time updates
+        .route("/api/counter", get(counter_sse))
         // Serve static assets
         .fallback(axum_egui::static_handler::<Assets>);
 
