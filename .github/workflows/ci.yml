@@ -33,3 +33,9 @@ jobs:
 
       - name: Check (example frontends wasm32)
         run: cd examples/basic/frontend && nix develop ../../..# --command cargo check --target wasm32-unknown-unknown
+
+      - name: Run tests
+        run: nix develop --command cargo test --workspace
+
+      - name: Build examples
+        run: nix develop --command cargo build -p basic-server -p multi-frontend-server
