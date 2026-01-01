@@ -9,12 +9,11 @@ name = "multi-frontend-server"
 path = "src/main.rs"
 
 [dependencies]
-# Shared types and server functions
-multi-frontend-shared = { path = "../shared", features = ["server"] }
+# Shared types
+multi-frontend-shared = { path = "../shared" }
 
 # axum-egui framework
 axum-egui = { path = "../../../axum-egui", features = ["server"] }
-server-fn = { workspace = true, features = ["server"] }
 
 # Web framework
 axum = { workspace = true }

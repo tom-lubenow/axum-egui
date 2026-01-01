@@ -8,7 +8,7 @@ publish = false
 crate-type = ["cdylib"]
 
 [dependencies]
-# Shared types and server functions (web mode)
+# Shared types and API functions (web mode)
 basic-shared = { path = "../shared", default-features = false, features = ["web"] }
 
 # egui
@@ -21,8 +21,6 @@ wasm-bindgen-futures = "0.4"
 web-sys = { version = "0.3", features = ["Document", "Element", "HtmlElement", "HtmlCanvasElement"] }
 log = "0.4"
 
-# For server function calls
-server-fn = { workspace = true, features = ["web"] }
+# Serialization (for initial state)
 serde = { workspace = true }
 serde_json = { workspace = true }
-futures = "0.3"

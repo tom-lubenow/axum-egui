@@ -5,9 +5,9 @@ Seamlessly embed egui frontends in axum backends with a single deployable binary
 ## Features
 
 - **Single-command build** - `cargo build` compiles everything (server + WASM frontends)
-- **Server functions** - Define once, call from anywhere (`#[server]`, `#[server(sse)]`, `#[server(ws)]`)
 - **Initial state injection** - Server passes state to frontend via `App<T>`
-- **Auto-registration** - Server functions register themselves at compile time
+- **Embedded assets** - Frontend WASM bundled into server binary
+- **Multiple frontends** - Serve different UIs from the same server
 
 ## Quick Start
 
@@ -28,7 +28,7 @@ my-app/
 ├── .cargo/
 │   └── config.toml      # Enable artifact dependencies
 ├── Cargo.toml           # Workspace
-├── shared/              # Types + server functions (both targets)
+├── shared/              # Shared types + API client functions
 ├── frontend/            # egui WASM app
 └── server/              # axum server
 ```
@@ -57,7 +57,7 @@ serde_json = "1"
 
 ### Step 2: Shared Crate
 
-Defines types and server functions that work on both server and client.
+Defines types and API client functions shared between server and frontend.
 
 **`shared/Cargo.toml`**:
 ```toml
@@ -67,25 +67,18 @@ version = "0.1.0"
 edition = "2024"
 
 [features]
-default = ["server"]
-server = ["server-fn/server", "dep:async-stream", "dep:tokio"]
-web = ["server-fn/web"]
+default = []
+web = ["dep:gloo-net"]
 
 [dependencies]
 serde = { workspace = true }
 serde_json = { workspace = true }
-server-fn = "0.1"
-futures = "0.3"
-
-# Server-only
-async-stream = { version = "0.3", optional = true }
-tokio = { version = "1", features = ["full"], optional = true }
+gloo-net = { version = "0.6", optional = true }
 ```
 
 **`shared/src/lib.rs`**:
 ```rust
 use serde::{Deserialize, Serialize};
-use server_fn::prelude::*;
 
 /// App state - serialized by server, deserialized by frontend
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -94,21 +87,29 @@ pub struct AppState {
     pub message: String,
 }
 
-/// A server function - runs on server, callable from frontend
-#[server]
-pub async fn increment(value: i32) -> Result<i32, ServerFnError> {
-    Ok(value + 1)
-}
+// API types
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct IncrementRequest { pub value: i32 }
 
-/// SSE streaming example
-#[server(sse)]
-pub async fn counter_stream() -> impl Stream<Item = i32> {
-    async_stream::stream! {
-        for i in 0..100 {
-            tokio::time::sleep(std::time::Duration::from_secs(1)).await;
-            yield i;
-        }
-    }
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct IncrementResponse { pub result: i32 }
+
+// Client functions (web feature only)
+#[cfg(feature = "web")]
+pub async fn increment(value: i32) -> Result<i32, String> {
+    use gloo_net::http::Request;
+
+    let req = IncrementRequest { value };
+    let resp: IncrementResponse = Request::post("/api/increment")
+        .header("Content-Type", "application/json")
+        .body(serde_json::to_string(&req).map_err(|e| e.to_string())?)?
+        .send()
+        .await
+        .map_err(|e| e.to_string())?
+        .json()
+        .await
+        .map_err(|e| e.to_string())?;
+    Ok(resp.result)
 }
 ```
 
@@ -139,8 +140,6 @@ wasm-bindgen-futures = "0.4"
 web-sys = { version = "0.3", features = ["Document", "Element", "HtmlCanvasElement"] }
 log = "0.4"
 
-# Server functions
-server-fn = { version = "0.1", features = ["web"] }
 serde = { workspace = true }
 serde_json = { workspace = true }
 ```
@@ -203,7 +202,6 @@ impl eframe::App for MyApp {
                 let ctx = ctx.clone();
                 wasm_bindgen_futures::spawn_local(async move {
                     if let Ok(new_value) = increment(current).await {
-                        // In real app, update state properly
                         log::info!("New value: {}", new_value);
                         ctx.request_repaint();
                     }
@@ -216,7 +214,7 @@ impl eframe::App for MyApp {
 
 ### Step 4: Server Crate
 
-The axum server that serves the frontend and handles server functions.
+The axum server that serves the frontend and handles API requests.
 
 **`server/Cargo.toml`**:
 ```toml
@@ -228,7 +226,6 @@ edition = "2024"
 [dependencies]
 my-shared = { path = "../shared" }
 axum-egui = "0.1"
-server-fn = { version = "0.1", features = ["server"] }
 axum = "0.8"
 tokio = { version = "1", features = ["full"] }
 tracing-subscriber = "0.3"
@@ -250,13 +247,9 @@ fn main() {
 
 **`server/src/main.rs`**:
 ```rust
-use axum::{Router, routing::get};
-use axum_egui::prelude::*;
-use my_shared::AppState;
+use axum::{Json, Router, routing::{get, post}};
+use my_shared::{AppState, IncrementRequest, IncrementResponse};
 use rust_embed::RustEmbed;
-
-// Import shared to link server functions
-use my_shared as _;
 
 // Embed frontend (convention: {CRATE_NAME}_DIST)
 #[derive(RustEmbed)]
@@ -270,13 +263,17 @@ async fn index() -> axum_egui::App<AppState, Assets> {
     })
 }
 
+async fn increment_handler(Json(req): Json<IncrementRequest>) -> Json<IncrementResponse> {
+    Json(IncrementResponse { result: req.value + 1 })
+}
+
 #[tokio::main]
 async fn main() {
     tracing_subscriber::fmt::init();
 
     let app = Router::new()
         .route("/", get(index))
-        .register_server_fns()
+        .route("/api/increment", post(increment_handler))
         .fallback(axum_egui::static_handler::<Assets>);
 
     let listener = tokio::net::TcpListener::bind("127.0.0.1:3000").await.unwrap();
@@ -292,35 +289,6 @@ cargo run -p my-server
 ```
 
 That's it! The frontend WASM is built automatically.
-
-## Server Functions
-
-```rust
-use server_fn::prelude::*;
-
-// Simple RPC
-#[server]
-pub async fn greet(name: String) -> Result<String, ServerFnError> {
-    Ok(format!("Hello, {}!", name))
-}
-
-// SSE streaming (server → client)
-#[server(sse)]
-pub async fn events() -> impl Stream<Item = String> {
-    async_stream::stream! {
-        loop {
-            tokio::time::sleep(Duration::from_secs(1)).await;
-            yield "tick".to_string();
-        }
-    }
-}
-
-// WebSocket (bidirectional)
-#[server(ws)]
-pub async fn echo(incoming: impl Stream<Item = String>) -> impl Stream<Item = String> {
-    incoming.map(|msg| format!("Echo: {}", msg))
-}
-```
 
 ## Multiple Frontends
 

@@ -9,12 +9,11 @@ name = "basic-server"
 path = "src/main.rs"
 
 [dependencies]
-# Shared types and server functions (server mode)
-basic-shared = { path = "../shared", features = ["server"] }
+# Shared types
+basic-shared = { path = "../shared" }
 
 # axum-egui framework
 axum-egui = { path = "../../../axum-egui", features = ["server"] }
-server-fn = { workspace = true, features = ["server"] }
 
 # Web framework
 axum = { workspace = true }

@@ -3,14 +3,14 @@
 //! - User frontend at `/`
 //! - Admin frontend at `/admin`
 
-use axum::{Router, extract::Request, http::Uri, response::IntoResponse, routing::get};
-use axum_egui::prelude::*;
+use axum::extract::Request;
+use axum::http::Uri;
+use axum::response::IntoResponse;
+use axum::routing::get;
+use axum::Router;
 use rust_embed::RustEmbed;
 use serde::{Deserialize, Serialize};
 use std::net::SocketAddr;
-
-// Import shared module to link server functions
-use multi_frontend_shared as _;
 
 // ============================================================================
 // App State Types (must match frontend types for JSON serialization)
@@ -96,8 +96,6 @@ async fn main() {
     let app = Router::new()
         // Mount admin frontend under /admin
         .nest("/admin", admin_routes)
-        // Auto-register server functions
-        .register_server_fns()
         // User frontend at root (must be last due to fallback)
         .merge(user_routes);
 

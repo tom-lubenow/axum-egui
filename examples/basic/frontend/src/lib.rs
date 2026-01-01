@@ -2,9 +2,9 @@
 //!
 //! This crate compiles to WASM and runs in the browser.
 
-use basic_shared::{AppState, api};
-use server_fn::prelude::*;
-use std::sync::mpsc::{Receiver, Sender, channel};
+use basic_shared::api::{self, ApiError};
+use basic_shared::AppState;
+use std::sync::mpsc::{channel, Receiver, Sender};
 use wasm_bindgen::prelude::*;
 
 // ============================================================================
@@ -66,8 +66,9 @@ fn read_initial_state<T: serde::de::DeserializeOwned>(document: &web_sys::Docume
 // ============================================================================
 
 enum ApiResponse {
-    Greet(Result<String, ServerFnError>),
-    Add(Result<i32, ServerFnError>),
+    Greet(Result<String, ApiError>),
+    Add(Result<i32, ApiError>),
+    Whoami(Result<api::WhoamiResponse, ApiError>),
 }
 
 pub struct ExampleApp {
@@ -78,19 +79,9 @@ pub struct ExampleApp {
 
     // Local state
     add_result: Option<i32>,
+    whoami_result: Option<api::WhoamiResponse>,
     response_rx: Receiver<ApiResponse>,
     response_tx: Sender<ApiResponse>,
-
-    // SSE state
-    counter_stream: Option<server_fn::sse::SseStream<i32>>,
-    counter_value: Option<i32>,
-    counter_connected: bool,
-
-    // WebSocket state
-    ws_echo: Option<server_fn::ws::WsStream<String, String>>,
-    ws_input: String,
-    ws_messages: Vec<String>,
-    ws_connected: bool,
 }
 
 impl ExampleApp {
@@ -101,15 +92,9 @@ impl ExampleApp {
             value: state.value,
             server_message: state.server_message,
             add_result: None,
+            whoami_result: None,
             response_rx: rx,
             response_tx: tx,
-            counter_stream: None,
-            counter_value: None,
-            counter_connected: false,
-            ws_echo: None,
-            ws_input: String::new(),
-            ws_messages: Vec::new(),
-            ws_connected: false,
         }
     }
 
@@ -129,42 +114,15 @@ impl ExampleApp {
         });
     }
 
-    fn start_counter(&mut self) {
-        if self.counter_stream.is_none() {
-            self.counter_stream = Some(api::counter());
-            self.counter_connected = false;
-        }
-    }
-
-    fn stop_counter(&mut self) {
-        self.counter_stream = None;
-        self.counter_connected = false;
-    }
-
-    fn connect_ws(&mut self) {
-        if self.ws_echo.is_none() {
-            self.ws_echo = Some(api::echo());
-            self.ws_connected = false;
-        }
-    }
-
-    fn disconnect_ws(&mut self) {
-        self.ws_echo = None;
-        self.ws_connected = false;
-    }
-
-    fn send_ws(&mut self) {
-        if let Some(ws) = &self.ws_echo {
-            if !self.ws_input.is_empty() {
-                ws.send(self.ws_input.clone());
-                self.ws_messages.push(format!("> {}", self.ws_input));
-                self.ws_input.clear();
-            }
-        }
+    fn call_whoami(&self) {
+        let tx = self.response_tx.clone();
+        wasm_bindgen_futures::spawn_local(async move {
+            let result = api::whoami().await;
+            let _ = tx.send(ApiResponse::Whoami(result));
+        });
     }
 
     fn process_responses(&mut self) {
-        // Process RPC responses
         while let Ok(response) = self.response_rx.try_recv() {
             match response {
                 ApiResponse::Greet(Ok(msg)) => self.server_message = Some(msg),
@@ -177,24 +135,10 @@ impl ExampleApp {
                     log::error!("Add error: {e}");
                     self.server_message = Some(format!("Error: {e}"));
                 }
-            }
-        }
-
-        // Process SSE events
-        if let Some(stream) = &mut self.counter_stream {
-            self.counter_connected = stream.is_connected();
-            for value in stream.try_iter() {
-                self.counter_value = Some(value);
-            }
-        }
-
-        // Process WebSocket events
-        if let Some(ws) = &mut self.ws_echo {
-            self.ws_connected = ws.is_connected();
-            for msg in ws.try_iter() {
-                self.ws_messages.push(format!("< {}", msg));
-                if self.ws_messages.len() > 20 {
-                    self.ws_messages.remove(0);
+                ApiResponse::Whoami(Ok(result)) => self.whoami_result = Some(result),
+                ApiResponse::Whoami(Err(e)) => {
+                    log::error!("Whoami error: {e}");
+                    self.server_message = Some(format!("Error: {e}"));
                 }
             }
         }
@@ -204,11 +148,6 @@ impl ExampleApp {
 impl eframe::App for ExampleApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         self.process_responses();
-
-        // Request continuous repaints while SSE or WebSocket is active
-        if self.counter_stream.is_some() || self.ws_echo.is_some() {
-            ctx.request_repaint();
-        }
 
         egui::TopBottomPanel::top("top_panel").show(ctx, |ui| {
             ui.horizontal(|ui| {
@@ -221,7 +160,8 @@ impl eframe::App for ExampleApp {
 
             // RPC Section
             ui.group(|ui| {
-                ui.label("RPC Functions");
+                ui.label("API Functions");
+
                 ui.horizontal(|ui| {
                     ui.label("Your name: ");
                     ui.text_edit_singleline(&mut self.label);
@@ -234,6 +174,9 @@ impl eframe::App for ExampleApp {
                     if ui.button("Add 10 + 32").clicked() {
                         self.call_add(10, 32);
                     }
+                    if ui.button("Whoami").clicked() {
+                        self.call_whoami();
+                    }
                 });
 
                 if let Some(msg) = &self.server_message {
@@ -242,88 +185,8 @@ impl eframe::App for ExampleApp {
                 if let Some(result) = &self.add_result {
                     ui.label(format!("Add result: {result}"));
                 }
-            });
-
-            ui.add_space(10.0);
-
-            // SSE Section
-            ui.group(|ui| {
-                ui.label("SSE Stream (Server-Sent Events)");
-
-                ui.horizontal(|ui| {
-                    let is_running = self.counter_stream.is_some();
-
-                    if !is_running {
-                        if ui.button("Start Counter Stream").clicked() {
-                            self.start_counter();
-                        }
-                    } else if ui.button("Stop Counter Stream").clicked() {
-                        self.stop_counter();
-                    }
-
-                    if is_running {
-                        let status = if self.counter_connected {
-                            "Connected"
-                        } else {
-                            "Connecting..."
-                        };
-                        ui.label(format!("Status: {status}"));
-                    }
-                });
-
-                if let Some(value) = self.counter_value {
-                    ui.label(format!("Counter: {value}"));
-                    ui.add(
-                        egui::ProgressBar::new(value as f32 / 100.0).text(format!("{value}/100")),
-                    );
-                }
-            });
-
-            ui.add_space(10.0);
-
-            // WebSocket Section
-            ui.group(|ui| {
-                ui.label("WebSocket Echo (Bidirectional)");
-
-                ui.horizontal(|ui| {
-                    let is_connected = self.ws_echo.is_some();
-
-                    if !is_connected {
-                        if ui.button("Connect").clicked() {
-                            self.connect_ws();
-                        }
-                    } else if ui.button("Disconnect").clicked() {
-                        self.disconnect_ws();
-                    }
-
-                    if is_connected {
-                        let status = if self.ws_connected {
-                            "Connected"
-                        } else {
-                            "Connecting..."
-                        };
-                        ui.label(format!("Status: {status}"));
-                    }
-                });
-
-                if self.ws_echo.is_some() {
-                    ui.horizontal(|ui| {
-                        let response = ui.text_edit_singleline(&mut self.ws_input);
-                        if ui.button("Send").clicked()
-                            || (response.lost_focus()
-                                && ui.input(|i| i.key_pressed(egui::Key::Enter)))
-                        {
-                            self.send_ws();
-                        }
-                    });
-
-                    egui::ScrollArea::vertical()
-                        .max_height(100.0)
-                        .show(ui, |ui| {
-                            for msg in &self.ws_messages {
-                                ui.monospace(msg);
-                            }
-                        });
+                if let Some(whoami) = &self.whoami_result {
+                    ui.label(format!("Whoami: {} (at {})", whoami.message, whoami.timestamp));
                 }
             });
 
@@ -333,6 +196,14 @@ impl eframe::App for ExampleApp {
             if ui.button("Increment").clicked() {
                 self.value += 1.0;
             }
+
+            ui.add_space(20.0);
+
+            ui.group(|ui| {
+                ui.label("Initial state received from server:");
+                ui.monospace(format!("label: {}", self.label));
+                ui.monospace(format!("value: {}", self.value));
+            });
 
             ui.with_layout(egui::Layout::bottom_up(egui::Align::LEFT), |ui| {
                 ui.horizontal(|ui| {

@@ -2,8 +2,6 @@
 members = [
     "axum-egui",
     "axum-egui-build",
-    "server-fn",
-    "server-fn-macro",
     # Basic example with separate frontend/server crates
     "examples/basic/shared",
     "examples/basic/frontend",
@@ -21,8 +19,6 @@ resolver = "2"
 default-members = [
     "axum-egui",
     "axum-egui-build",
-    "server-fn",
-    "server-fn-macro",
     "examples/basic/shared",
     "examples/basic/server",
     "examples/multi-frontend/shared",
@@ -55,9 +51,6 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 # Asset embedding
 rust-embed = { version = "8", features = ["include-exclude"] }
 mime_guess = "2"
-
-# Server functions
-server-fn = { path = "server-fn" }
 
 [profile.release]
 opt-level = 2
