@@ -8,6 +8,8 @@ Seamlessly embed egui frontends in axum backends with a single deployable binary
 - **Initial state injection** - Server passes state to frontend via `App<T>`
 - **Embedded assets** - Frontend WASM bundled into server binary
 - **Multiple frontends** - Serve different UIs from the same server
+- **Server-Sent Events** - Real-time streaming from server to client
+- **Type-safe RPC** - `#[server]` macro for functions that work on both server and client
 
 ## Quick Start
 
@@ -314,6 +316,98 @@ struct AdminAssets;
 ```
 
 See `examples/multi-frontend/` for a complete example.
+
+## Server-Sent Events (SSE)
+
+Stream real-time updates from server to client:
+
+**Server:**
+```rust
+use axum_egui::sse::{Sse, Event, KeepAlive};
+use futures_util::stream;
+use std::time::Duration;
+
+async fn counter() -> Sse<impl Stream<Item = Result<axum::response::sse::Event, Infallible>>> {
+    let stream = stream::unfold(0, |count| async move {
+        tokio::time::sleep(Duration::from_secs(1)).await;
+        let event = Event::new()
+            .json_data(count)
+            .unwrap()
+            .into();
+        Some((Ok(event), count + 1))
+    });
+
+    Sse::new(stream).keep_alive(KeepAlive::default())
+}
+```
+
+**Client (WASM):**
+```rust
+use axum_egui::sse::{SseStream, SseError};
+
+async fn connect_to_counter() -> Result<(), SseError> {
+    let mut stream = SseStream::<i32>::connect("/api/counter")?;
+
+    while let Some(result) = stream.next().await {
+        match result {
+            Ok(count) => log::info!("Counter: {}", count),
+            Err(e) => log::error!("SSE error: {}", e),
+        }
+    }
+    Ok(())
+}
+```
+
+## Type-Safe Server Functions
+
+Use the `#[server]` macro to define functions that work on both server and client:
+
+**`shared/src/lib.rs`:**
+```rust
+use axum_egui::{server, ServerFnError};
+
+#[server]
+pub async fn greet(name: String) -> Result<String, ServerFnError> {
+    Ok(format!("Hello, {}!", name))
+}
+
+#[server]
+pub async fn add(a: i32, b: i32) -> Result<i32, ServerFnError> {
+    Ok(a + b)
+}
+```
+
+On the **server**, this generates:
+- The async function itself
+- A `{fn_name}_handler` for use with axum routes
+
+On the **client** (WASM), this generates:
+- An async function that makes HTTP requests to the server
+
+**Server usage:**
+```rust
+use my_shared::greet_handler;
+
+let app = Router::new()
+    .route("/api/greet", post(greet_handler));
+```
+
+**Client usage:**
+```rust
+use my_shared::greet;
+
+// Just call the function - it makes an HTTP request automatically
+let message = greet("World".into()).await?;
+```
+
+### Custom Endpoints
+
+```rust
+#[server(endpoint = "/api/v2/greet")]
+pub async fn greet(name: String) -> Result<String, ServerFnError> {
+    Ok(format!("Hello, {}!", name))
+}
+```
 
 ## Prerequisites
 

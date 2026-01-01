@@ -23,7 +23,7 @@ jobs:
         run: cd examples/basic/frontend && nix develop ../../..# --command cargo fmt -- --check
 
       - name: Run clippy (library crates)
-        run: nix develop --command cargo clippy -p axum-egui -p axum-egui-build --all-features -- -D warnings
+        run: nix develop --command cargo clippy -p axum-egui -p axum-egui-build -p axum-egui-macro --all-features -- -D warnings
 
       - name: Run clippy (example servers)
         run: nix develop --command cargo clippy -p basic-server -p multi-frontend-server -- -D warnings
@@ -35,7 +35,7 @@ jobs:
           nix develop --command cargo clippy -p admin-frontend --target wasm32-unknown-unknown -- -D warnings
 
       - name: Check (library crates)
-        run: nix develop --command cargo check -p axum-egui -p axum-egui-build --all-features
+        run: nix develop --command cargo check -p axum-egui -p axum-egui-build -p axum-egui-macro --all-features
 
       - name: Check (example frontends - wasm32)
         run: |
@@ -44,7 +44,7 @@ jobs:
           nix develop --command cargo check -p admin-frontend --target wasm32-unknown-unknown
 
       - name: Run tests
-        run: nix develop --command cargo nextest run -p axum-egui -p axum-egui-build
+        run: nix develop --command cargo nextest run -p axum-egui -p axum-egui-build -p axum-egui-macro
 
       - name: Build examples
         run: nix develop --command cargo build -p basic-server -p multi-frontend-server
