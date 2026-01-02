@@ -300,9 +300,7 @@ mod tests {
     #[test]
     fn event_with_retry() {
         use std::time::Duration;
-        let event = Event::new()
-            .retry(Duration::from_secs(5))
-            .data("payload");
+        let event = Event::new().retry(Duration::from_secs(5)).data("payload");
         let _: axum::response::sse::Event = event.into();
     }
 
