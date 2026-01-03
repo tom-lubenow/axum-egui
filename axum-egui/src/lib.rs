@@ -8,6 +8,7 @@
 //! - `App<T>` response wrapper for serving egui apps with initial state
 //! - Static file serving utilities for embedded assets
 //! - Server-Sent Events (SSE) for real-time server-to-client updates
+//! - WebSockets for bidirectional real-time communication
 //! - `#[server]` macro for type-safe RPC between client and server
 //!
 //! # Server Example
@@ -214,6 +215,13 @@ pub use app::{App, static_handler};
 #[cfg(any(feature = "server", feature = "client"))]
 pub mod sse;
 
+// ============================================================================
+// WebSocket support
+// ============================================================================
+
+#[cfg(any(feature = "server", feature = "client"))]
+pub mod ws;
+
 /// Prelude module for convenient imports.
 pub mod prelude {
     pub use crate::{ServerFnError, server};
@@ -223,6 +231,12 @@ pub mod prelude {
 
     #[cfg(feature = "server")]
     pub use crate::sse::{Event, KeepAlive, Sse, SseExt};
+
+    #[cfg(feature = "server")]
+    pub use crate::ws::{JsonWebSocket, Message, WebSocket, WebSocketUpgrade, WebSocketUpgradeExt};
+
+    #[cfg(feature = "client")]
+    pub use crate::ws::{WsClientReceiver, WsClientSender, WsError, WsStream};
 }
 
 #[cfg(all(test, feature = "server"))]

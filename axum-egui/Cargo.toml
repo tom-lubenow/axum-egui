@@ -12,9 +12,9 @@ categories = ["web-programming", "gui", "wasm"]
 [features]
 default = ["server"]
 # Enable server-side features (axum integration)
-server = ["dep:axum", "dep:rust-embed", "dep:mime_guess", "dep:tokio-stream", "dep:futures-util"]
+server = ["dep:axum", "dep:rust-embed", "dep:mime_guess", "dep:tokio-stream", "dep:futures-util", "dep:futures-channel", "dep:bytes", "dep:tokio"]
 # Enable client-side features (WASM)
-client = ["dep:gloo-net", "dep:wasm-bindgen", "dep:wasm-bindgen-futures", "dep:futures-util", "dep:web-sys", "dep:js-sys"]
+client = ["dep:gloo-net", "dep:wasm-bindgen", "dep:wasm-bindgen-futures", "dep:futures-util", "dep:futures-channel", "dep:web-sys", "dep:js-sys", "dep:send_wrapper"]
 
 [dependencies]
 axum = { workspace = true, optional = true }
@@ -23,7 +23,10 @@ serde_json = { workspace = true }
 rust-embed = { workspace = true, optional = true }
 mime_guess = { workspace = true, optional = true }
 tokio-stream = { version = "0.1", optional = true }
-futures-util = { version = "0.3", optional = true }
+futures-util = { version = "0.3", features = ["sink"], optional = true }
+futures-channel = { version = "0.3", optional = true }
+bytes = { version = "1", optional = true }
+tokio = { version = "1", features = ["rt", "sync", "macros"], optional = true }
 
 # Macro support
 axum-egui-macro = { version = "0.2.0", path = "../axum-egui-macro" }
@@ -34,6 +37,7 @@ wasm-bindgen = { version = "0.2", optional = true }
 wasm-bindgen-futures = { version = "0.4", optional = true }
 web-sys = { version = "0.3", optional = true, features = ["EventSource", "MessageEvent"] }
 js-sys = { version = "0.3", optional = true }
+send_wrapper = { version = "0.6", optional = true }
 
 [dev-dependencies]
 tokio = { version = "1", features = ["rt", "macros"] }
