@@ -24,3 +24,7 @@ log = "0.4"
 # Serialization (for initial state)
 serde = { workspace = true }
 serde_json = { workspace = true }
+
+# WebSocket support
+axum-egui = { path = "../../../axum-egui", default-features = false, features = ["client"] }
+futures-util = "0.3"

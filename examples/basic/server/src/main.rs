@@ -5,11 +5,14 @@
 //! - Provides API endpoints using the #[server] macro
 //! - Demonstrates simple RPC patterns
 //! - Provides SSE streaming for real-time updates
+//! - Provides WebSocket echo endpoint for bidirectional communication
 
 use axum::routing::{get, post};
 use axum::{Json, Router};
 use axum_egui::sse::{Event, KeepAlive, Sse};
+use axum_egui::ws::{WebSocketUpgrade, WebSocketUpgradeExt};
 use basic_shared::{AppState, api, server_fns};
+use futures_util::StreamExt;
 use futures_util::stream::{self, Stream};
 use rust_embed::RustEmbed;
 use std::convert::Infallible;
@@ -77,6 +80,24 @@ async fn counter_sse() -> Sse<impl Stream<Item = Result<axum::response::sse::Eve
     Sse::new(stream).keep_alive(KeepAlive::default())
 }
 
+// ============================================================================
+// WebSocket Handlers
+// ============================================================================
+
+/// WebSocket echo endpoint that echoes messages back with a prefix.
+async fn ws_echo(ws: WebSocketUpgrade) -> impl axum::response::IntoResponse {
+    ws.on_upgrade_json(
+        |mut socket: axum_egui::ws::JsonWebSocket<String, String>| async move {
+            while let Some(Ok(msg)) = socket.next().await {
+                let response = format!("Echo: {}", msg);
+                if socket.send(response).is_err() {
+                    break;
+                }
+            }
+        },
+    )
+}
+
 #[tokio::main]
 async fn main() {
     tracing_subscriber::fmt::init();
@@ -94,6 +115,8 @@ async fn main() {
         .route("/api/v2/whoami", get(server_fns::whoami_handler))
         // SSE endpoint for real-time updates
         .route("/api/counter", get(counter_sse))
+        // WebSocket endpoint for bidirectional communication
+        .route("/api/ws", get(ws_echo))
         // Serve static assets
         .fallback(axum_egui::static_handler::<Assets>);
 

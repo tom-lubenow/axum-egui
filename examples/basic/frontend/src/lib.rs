@@ -2,8 +2,10 @@
 //!
 //! This crate compiles to WASM and runs in the browser.
 
+use axum_egui::ws::{WsClientSender, WsStream};
 use basic_shared::AppState;
 use basic_shared::api::{self, ApiError};
+use futures_util::StreamExt;
 use std::sync::mpsc::{Receiver, Sender, channel};
 use wasm_bindgen::prelude::*;
 
@@ -69,6 +71,9 @@ enum ApiResponse {
     Greet(Result<String, ApiError>),
     Add(Result<i32, ApiError>),
     Whoami(Result<api::WhoamiResponse, ApiError>),
+    WsMessage(String),
+    WsConnected(WsClientSender<String>),
+    WsError(String),
 }
 
 pub struct ExampleApp {
@@ -82,6 +87,12 @@ pub struct ExampleApp {
     whoami_result: Option<api::WhoamiResponse>,
     response_rx: Receiver<ApiResponse>,
     response_tx: Sender<ApiResponse>,
+
+    // WebSocket state
+    ws_input: String,
+    ws_messages: Vec<String>,
+    ws_sender: Option<WsClientSender<String>>,
+    ws_connected: bool,
 }
 
 impl ExampleApp {
@@ -95,6 +106,10 @@ impl ExampleApp {
             whoami_result: None,
             response_rx: rx,
             response_tx: tx,
+            ws_input: String::new(),
+            ws_messages: Vec::new(),
+            ws_sender: None,
+            ws_connected: false,
         }
     }
 
@@ -122,6 +137,55 @@ impl ExampleApp {
         });
     }
 
+    fn connect_websocket(&self) {
+        let tx = self.response_tx.clone();
+        wasm_bindgen_futures::spawn_local(async move {
+            // Build WebSocket URL from current origin
+            let window = web_sys::window().expect("no window");
+            let location = window.location();
+            let protocol = if location.protocol().unwrap_or_default() == "https:" {
+                "wss:"
+            } else {
+                "ws:"
+            };
+            let host = location.host().unwrap_or_else(|_| "localhost:3000".into());
+            let url = format!("{}//{}/api/ws", protocol, host);
+
+            match WsStream::<String, String>::connect(&url).await {
+                Ok((sender, mut receiver)) => {
+                    let _ = tx.send(ApiResponse::WsConnected(sender));
+
+                    // Spawn a task to receive messages
+                    let tx_recv = tx.clone();
+                    wasm_bindgen_futures::spawn_local(async move {
+                        while let Some(result) = receiver.next().await {
+                            match result {
+                                Ok(msg) => {
+                                    let _ = tx_recv.send(ApiResponse::WsMessage(msg));
+                                }
+                                Err(e) => {
+                                    let _ = tx_recv.send(ApiResponse::WsError(format!("{:?}", e)));
+                                    break;
+                                }
+                            }
+                        }
+                    });
+                }
+                Err(e) => {
+                    let _ = tx.send(ApiResponse::WsError(format!("Connect error: {:?}", e)));
+                }
+            }
+        });
+    }
+
+    fn send_ws_message(&self, msg: String) {
+        if let Some(sender) = &self.ws_sender
+            && let Err(e) = sender.send(msg)
+        {
+            log::error!("Failed to send WebSocket message: {:?}", e);
+        }
+    }
+
     fn process_responses(&mut self) {
         while let Ok(response) = self.response_rx.try_recv() {
             match response {
@@ -139,6 +203,20 @@ impl ExampleApp {
                 ApiResponse::Whoami(Err(e)) => {
                     log::error!("Whoami error: {e}");
                     self.server_message = Some(format!("Error: {e}"));
+                }
+                ApiResponse::WsConnected(sender) => {
+                    self.ws_sender = Some(sender);
+                    self.ws_connected = true;
+                    self.ws_messages.push("Connected to WebSocket!".into());
+                }
+                ApiResponse::WsMessage(msg) => {
+                    self.ws_messages.push(msg);
+                }
+                ApiResponse::WsError(e) => {
+                    log::error!("WebSocket error: {e}");
+                    self.ws_messages.push(format!("Error: {e}"));
+                    self.ws_connected = false;
+                    self.ws_sender = None;
                 }
             }
         }
@@ -206,6 +284,45 @@ impl eframe::App for ExampleApp {
                 ui.label("Initial state received from server:");
                 ui.monospace(format!("label: {}", self.label));
                 ui.monospace(format!("value: {}", self.value));
+            });
+
+            ui.add_space(10.0);
+
+            // WebSocket Section
+            ui.group(|ui| {
+                ui.label("WebSocket Echo");
+
+                ui.horizontal(|ui| {
+                    if self.ws_connected {
+                        ui.label("Status: Connected");
+                    } else if ui.button("Connect").clicked() {
+                        self.connect_websocket();
+                    }
+                });
+
+                if self.ws_connected {
+                    ui.horizontal(|ui| {
+                        ui.label("Message: ");
+                        let response = ui.text_edit_singleline(&mut self.ws_input);
+                        if (response.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)))
+                            || ui.button("Send").clicked()
+                        {
+                            let msg = std::mem::take(&mut self.ws_input);
+                            if !msg.is_empty() {
+                                self.send_ws_message(msg);
+                            }
+                        }
+                    });
+                }
+
+                // Show recent messages (last 5)
+                if !self.ws_messages.is_empty() {
+                    ui.separator();
+                    ui.label("Messages:");
+                    for msg in self.ws_messages.iter().rev().take(5).rev() {
+                        ui.monospace(msg);
+                    }
+                }
             });
 
             ui.with_layout(egui::Layout::bottom_up(egui::Align::LEFT), |ui| {

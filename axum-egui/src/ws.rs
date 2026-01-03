@@ -302,7 +302,7 @@ pub use server::*;
 #[cfg(feature = "client")]
 mod client {
     use futures_channel::mpsc;
-    use futures_util::{Sink, SinkExt, Stream, StreamExt};
+    use futures_util::{SinkExt, Stream, StreamExt};
     use gloo_net::websocket::{Message, futures::WebSocket};
     use send_wrapper::SendWrapper;
     use serde::{Serialize, de::DeserializeOwned};
@@ -335,13 +335,10 @@ mod client {
 
     impl std::error::Error for WsError {}
 
-    /// A client-side WebSocket stream with JSON serialization.
+    /// Client-side WebSocket connection helper with JSON serialization.
     ///
-    /// Provides typed bidirectional communication with the server.
-    pub struct WsStream<T, R> {
-        tx: WsClientSender<T>,
-        rx: WsClientReceiver<R>,
-    }
+    /// Use `WsStream::connect` to establish a typed WebSocket connection.
+    pub struct WsStream<T, R>(std::marker::PhantomData<(T, R)>);
 
     impl<T, R> WsStream<T, R>
     where
@@ -350,7 +347,7 @@ mod client {
     {
         /// Connect to a WebSocket endpoint.
         ///
-        /// Returns a bidirectional stream for sending type T and receiving type R.
+        /// Returns a sender for type T and receiver for type R.
         pub async fn connect(
             url: &str,
         ) -> Result<(WsClientSender<T>, WsClientReceiver<R>), WsError> {
@@ -373,9 +370,9 @@ mod client {
 
             let (ws_sink, ws_stream) = websocket.split();
 
-            // Create channels for typed messages
-            let (outgoing_tx, mut outgoing_rx) = mpsc::channel::<T>(256);
-            let (mut incoming_tx, incoming_rx) = mpsc::channel::<Result<R, WsError>>(256);
+            // Create unbounded channels for typed messages
+            let (outgoing_tx, mut outgoing_rx) = mpsc::unbounded::<T>();
+            let (incoming_tx, incoming_rx) = mpsc::unbounded::<Result<R, WsError>>();
 
             // Wrap sink for sending
             let ws_sink = SendWrapper::new(ws_sink);
@@ -407,29 +404,30 @@ mod client {
                     match msg {
                         Ok(Message::Text(text)) => match serde_json::from_str::<R>(&text) {
                             Ok(parsed) => {
-                                if incoming_tx.send(Ok(parsed)).await.is_err() {
+                                if incoming_tx.unbounded_send(Ok(parsed)).is_err() {
                                     break;
                                 }
                             }
                             Err(e) => {
-                                let _ = incoming_tx.send(Err(WsError::Parse(e.to_string()))).await;
+                                let _ =
+                                    incoming_tx.unbounded_send(Err(WsError::Parse(e.to_string())));
                             }
                         },
                         Ok(Message::Bytes(bytes)) => match serde_json::from_slice::<R>(&bytes) {
                             Ok(parsed) => {
-                                if incoming_tx.send(Ok(parsed)).await.is_err() {
+                                if incoming_tx.unbounded_send(Ok(parsed)).is_err() {
                                     break;
                                 }
                             }
                             Err(e) => {
-                                let _ = incoming_tx.send(Err(WsError::Parse(e.to_string()))).await;
+                                let _ =
+                                    incoming_tx.unbounded_send(Err(WsError::Parse(e.to_string())));
                             }
                         },
                         Err(e) => {
                             web_sys::console::error_1(&format!("WebSocket error: {:?}", e).into());
                             let _ = incoming_tx
-                                .send(Err(WsError::Connection(format!("{:?}", e))))
-                                .await;
+                                .unbounded_send(Err(WsError::Connection(format!("{:?}", e))));
                             break;
                         }
                     }
@@ -448,23 +446,24 @@ mod client {
 
     /// Sender half for client WebSocket.
     pub struct WsClientSender<T> {
-        tx: mpsc::Sender<T>,
+        tx: mpsc::UnboundedSender<T>,
         _phantom: std::marker::PhantomData<T>,
     }
 
     impl<T> WsClientSender<T> {
         /// Send a message to the server.
-        pub async fn send(&mut self, msg: T) -> Result<(), WsError> {
+        ///
+        /// This is a synchronous operation that queues the message for sending.
+        pub fn send(&self, msg: T) -> Result<(), WsError> {
             self.tx
-                .send(msg)
-                .await
+                .unbounded_send(msg)
                 .map_err(|e| WsError::Send(e.to_string()))
         }
     }
 
     /// Receiver half for client WebSocket.
     pub struct WsClientReceiver<R> {
-        rx: mpsc::Receiver<Result<R, WsError>>,
+        rx: mpsc::UnboundedReceiver<Result<R, WsError>>,
     }
 
     impl<R> Stream for WsClientReceiver<R> {
@@ -478,15 +477,7 @@ mod client {
     /// Open a raw WebSocket connection returning byte streams.
     ///
     /// This is a lower-level API for custom protocols.
-    pub async fn open_raw_websocket(
-        url: &str,
-    ) -> Result<
-        (
-            impl Stream<Item = Result<bytes::Bytes, WsError>> + 'static,
-            impl Sink<bytes::Bytes, Error = WsError> + 'static,
-        ),
-        WsError,
-    > {
+    pub async fn open_raw_websocket(url: &str) -> Result<(WsRawSender, WsRawReceiver), WsError> {
         // Convert relative URL to absolute WebSocket URL
         let ws_url = if url.starts_with("ws://") || url.starts_with("wss://") {
             url.to_string()
@@ -504,66 +495,71 @@ mod client {
         let websocket =
             WebSocket::open(&ws_url).map_err(|e| WsError::Connection(format!("{:?}", e)))?;
 
-        let (sink, stream) = websocket.split();
+        let (ws_sink, ws_stream) = websocket.split();
 
-        // Map stream to bytes
-        let stream = stream.map(|msg| match msg {
-            Ok(Message::Text(text)) => Ok(bytes::Bytes::from(text)),
-            Ok(Message::Bytes(bytes)) => Ok(bytes::Bytes::from(bytes)),
-            Err(e) => Err(WsError::Connection(format!("{:?}", e))),
+        // Create channels
+        let (outgoing_tx, mut outgoing_rx) = mpsc::unbounded::<Vec<u8>>();
+        let (incoming_tx, incoming_rx) = mpsc::unbounded::<Result<Vec<u8>, WsError>>();
+
+        let ws_sink = SendWrapper::new(ws_sink);
+        let ws_stream = SendWrapper::new(ws_stream);
+
+        // Spawn task for outgoing messages
+        wasm_bindgen_futures::spawn_local(async move {
+            let mut ws_sink = ws_sink;
+            while let Some(bytes) = outgoing_rx.next().await {
+                if ws_sink.send(Message::Bytes(bytes)).await.is_err() {
+                    break;
+                }
+            }
         });
-        let stream = SendWrapper::new(stream);
 
-        // Wrap sink to accept bytes
-        struct BytesSink<S> {
-            sink: SendWrapper<S>,
+        // Spawn task for incoming messages
+        wasm_bindgen_futures::spawn_local(async move {
+            let mut ws_stream = ws_stream;
+            while let Some(msg) = ws_stream.next().await {
+                let result = match msg {
+                    Ok(Message::Text(text)) => Ok(text.into_bytes()),
+                    Ok(Message::Bytes(bytes)) => Ok(bytes),
+                    Err(e) => Err(WsError::Connection(format!("{:?}", e))),
+                };
+                if incoming_tx.unbounded_send(result).is_err() {
+                    break;
+                }
+            }
+        });
+
+        Ok((
+            WsRawSender { tx: outgoing_tx },
+            WsRawReceiver { rx: incoming_rx },
+        ))
+    }
+
+    /// Sender for raw WebSocket bytes.
+    pub struct WsRawSender {
+        tx: mpsc::UnboundedSender<Vec<u8>>,
+    }
+
+    impl WsRawSender {
+        /// Send raw bytes to the server.
+        pub fn send(&self, bytes: Vec<u8>) -> Result<(), WsError> {
+            self.tx
+                .unbounded_send(bytes)
+                .map_err(|e| WsError::Send(e.to_string()))
         }
+    }
 
-        impl<S> Sink<bytes::Bytes> for BytesSink<S>
-        where
-            S: Sink<Message, Error = gloo_net::websocket::WebSocketError> + Unpin,
-        {
-            type Error = WsError;
+    /// Receiver for raw WebSocket bytes.
+    pub struct WsRawReceiver {
+        rx: mpsc::UnboundedReceiver<Result<Vec<u8>, WsError>>,
+    }
 
-            fn poll_ready(
-                self: Pin<&mut Self>,
-                cx: &mut Context<'_>,
-            ) -> Poll<Result<(), Self::Error>> {
-                Pin::new(&mut self.get_mut().sink)
-                    .poll_ready(cx)
-                    .map_err(|e| WsError::Send(format!("{:?}", e)))
-            }
+    impl Stream for WsRawReceiver {
+        type Item = Result<Vec<u8>, WsError>;
 
-            fn start_send(self: Pin<&mut Self>, item: bytes::Bytes) -> Result<(), Self::Error> {
-                Pin::new(&mut self.get_mut().sink)
-                    .start_send(Message::Bytes(item.to_vec()))
-                    .map_err(|e| WsError::Send(format!("{:?}", e)))
-            }
-
-            fn poll_flush(
-                self: Pin<&mut Self>,
-                cx: &mut Context<'_>,
-            ) -> Poll<Result<(), Self::Error>> {
-                Pin::new(&mut self.get_mut().sink)
-                    .poll_flush(cx)
-                    .map_err(|e| WsError::Send(format!("{:?}", e)))
-            }
-
-            fn poll_close(
-                self: Pin<&mut Self>,
-                cx: &mut Context<'_>,
-            ) -> Poll<Result<(), Self::Error>> {
-                Pin::new(&mut self.get_mut().sink)
-                    .poll_close(cx)
-                    .map_err(|e| WsError::Send(format!("{:?}", e)))
-            }
+        fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
+            Pin::new(&mut self.rx).poll_next(cx)
         }
-
-        let sink = BytesSink {
-            sink: SendWrapper::new(sink),
-        };
-
-        Ok((stream, sink))
     }
 }
 
