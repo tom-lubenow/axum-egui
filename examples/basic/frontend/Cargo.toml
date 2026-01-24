@@ -5,26 +5,42 @@ edition = "2024"
 publish = false
 
 [lib]
-crate-type = ["cdylib"]
+crate-type = ["cdylib", "rlib"]  # Both WASM and native
+
+[features]
+default = []
+# Server-side rendering (for server function handlers)
+ssr = ["axum-egui/server", "dep:axum"]
+# Client-side hydration (WASM browser)
+hydrate = [
+    "axum-egui/client",
+    "dep:eframe",
+    "dep:egui",
+    "dep:wasm-bindgen",
+    "dep:wasm-bindgen-futures",
+    "dep:web-sys",
+    "dep:log",
+    "dep:futures-util",
+]
 
 [dependencies]
-# Shared types and API functions (web mode)
-basic-shared = { path = "../shared", default-features = false, features = ["web"] }
+# axum-egui framework (feature-gated)
+axum-egui = { path = "../../../axum-egui", default-features = false }
 
-# egui
-eframe = { version = "0.31", default-features = false, features = ["wgpu", "web_screen_reader"] }
-egui = "0.31"
+# axum for handlers (ssr only)
+axum = { workspace = true, optional = true }
 
-# WASM
-wasm-bindgen = "=0.2.104"
-wasm-bindgen-futures = "0.4"
-web-sys = { version = "0.3", features = ["Document", "Element", "HtmlElement", "HtmlCanvasElement"] }
-log = "0.4"
-
-# Serialization (for initial state)
+# Serialization
 serde = { workspace = true }
 serde_json = { workspace = true }
 
-# WebSocket support
-axum-egui = { path = "../../../axum-egui", default-features = false, features = ["client"] }
-futures-util = "0.3"
+# egui (only for hydrate/wasm)
+eframe = { version = "0.31", default-features = false, features = ["wgpu", "web_screen_reader"], optional = true }
+egui = { version = "0.31", optional = true }
+
+# WASM (only for hydrate)
+wasm-bindgen = { version = "=0.2.104", optional = true }
+wasm-bindgen-futures = { version = "0.4", optional = true }
+web-sys = { version = "0.3", features = ["Document", "Element", "HtmlElement", "HtmlCanvasElement"], optional = true }
+log = { version = "0.4", optional = true }
+futures-util = { version = "0.3", optional = true }

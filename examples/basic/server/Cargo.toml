@@ -9,8 +9,8 @@ name = "basic-server"
 path = "src/main.rs"
 
 [dependencies]
-# Shared types
-basic-shared = { path = "../shared", features = ["server"] }
+# Import frontend as library (for server function registration)
+basic-frontend = { path = "../frontend", features = ["ssr"] }
 
 # axum-egui framework
 axum-egui = { path = "../../../axum-egui", features = ["server"] }
@@ -35,4 +35,4 @@ futures-util = "0.3"
 # This automatically builds the frontend for wasm32 and provides the path
 [build-dependencies]
 axum-egui-build = { path = "../../../axum-egui-build" }
-basic-frontend = { path = "../frontend", artifact = "cdylib", target = "wasm32-unknown-unknown" }
+basic-frontend = { path = "../frontend", artifact = "cdylib", target = "wasm32-unknown-unknown", features = ["hydrate"] }

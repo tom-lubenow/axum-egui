@@ -9,7 +9,7 @@
 //! - Static file serving utilities for embedded assets
 //! - Server-Sent Events (SSE) for real-time server-to-client updates
 //! - WebSockets for bidirectional real-time communication
-//! - `#[server]` macro for type-safe RPC between client and server
+//! - Simple RPC helpers for client-server communication
 //!
 //! # Server Example
 //!
@@ -47,65 +47,15 @@
 //!     // ...
 //! }
 //! ```
-//!
-//! # Server Functions
-//!
-//! Use the `#[server]` macro to define functions that work on both server and client:
-//!
-//! ```ignore
-//! use axum_egui::{server, ServerFnError};
-//!
-//! #[server]
-//! pub async fn greet(name: String) -> Result<String, ServerFnError> {
-//!     Ok(format!("Hello, {}!", name))
-//! }
-//! ```
-//!
-//! On the server, this generates an axum handler. On the client (WASM), it generates
-//! a function that makes an HTTP request to the server.
 
 // ============================================================================
-// Server function support
+// RPC support
 // ============================================================================
 
-/// Re-export the server macro.
+pub mod rpc;
+
+// Re-export the server macro
 pub use axum_egui_macro::server;
-
-/// Error type for server functions.
-#[derive(Debug, Clone)]
-pub enum ServerFnError {
-    /// Failed to serialize the request.
-    Serialization(String),
-    /// Failed to deserialize the response.
-    Deserialization(String),
-    /// HTTP request failed.
-    Request(String),
-    /// Server returned an error.
-    ServerError(String),
-}
-
-impl std::fmt::Display for ServerFnError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            ServerFnError::Serialization(msg) => write!(f, "Serialization error: {}", msg),
-            ServerFnError::Deserialization(msg) => write!(f, "Deserialization error: {}", msg),
-            ServerFnError::Request(msg) => write!(f, "Request error: {}", msg),
-            ServerFnError::ServerError(msg) => write!(f, "Server error: {}", msg),
-        }
-    }
-}
-
-impl std::error::Error for ServerFnError {}
-
-/// Private module for macro-generated code.
-/// Not part of the public API.
-#[doc(hidden)]
-pub mod __private {
-    pub use serde_json;
-
-    #[cfg(feature = "client")]
-    pub use gloo_net;
-}
 
 // ============================================================================
 // Server-only: App wrapper and static file serving
@@ -222,18 +172,28 @@ pub mod sse;
 #[cfg(any(feature = "server", feature = "client"))]
 pub mod ws;
 
+// Re-export commonly used items at the crate root
+pub use rpc::ServerFnError;
+
 /// Prelude module for convenient imports.
 pub mod prelude {
-    pub use crate::{ServerFnError, server};
+    pub use crate::rpc::ServerFnError;
+    pub use crate::server;
 
     #[cfg(feature = "server")]
     pub use crate::{App, static_handler};
+
+    #[cfg(feature = "server")]
+    pub use crate::rpc::{ApiResponse, IntoApiResponse, json_handler};
 
     #[cfg(feature = "server")]
     pub use crate::sse::{Event, KeepAlive, Sse, SseExt};
 
     #[cfg(feature = "server")]
     pub use crate::ws::{JsonWebSocket, Message, WebSocket, WebSocketUpgrade, WebSocketUpgradeExt};
+
+    #[cfg(feature = "client")]
+    pub use crate::rpc::call;
 
     #[cfg(feature = "client")]
     pub use crate::ws::{WsClientReceiver, WsClientSender, WsError, WsStream};

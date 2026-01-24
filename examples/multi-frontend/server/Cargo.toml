@@ -9,8 +9,9 @@ name = "multi-frontend-server"
 path = "src/main.rs"
 
 [dependencies]
-# Shared types
-multi-frontend-shared = { path = "../shared" }
+# Import frontends as libraries (for type sharing with ssr feature)
+user-frontend = { path = "../user-frontend", features = ["ssr"] }
+admin-frontend = { path = "../admin-frontend", features = ["ssr"] }
 
 # axum-egui framework
 axum-egui = { path = "../../../axum-egui", features = ["server"] }
@@ -31,5 +32,5 @@ serde_json = { workspace = true }
 # Artifact dependencies: both frontends (RFC 3028)
 [build-dependencies]
 axum-egui-build = { path = "../../../axum-egui-build" }
-user-frontend = { path = "../user-frontend", artifact = "cdylib", target = "wasm32-unknown-unknown" }
-admin-frontend = { path = "../admin-frontend", artifact = "cdylib", target = "wasm32-unknown-unknown" }
+user-frontend = { path = "../user-frontend", artifact = "cdylib", target = "wasm32-unknown-unknown", features = ["hydrate"] }
+admin-frontend = { path = "../admin-frontend", artifact = "cdylib", target = "wasm32-unknown-unknown", features = ["hydrate"] }

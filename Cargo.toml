@@ -3,27 +3,23 @@ members = [
     "axum-egui",
     "axum-egui-build",
     "axum-egui-macro",
-    # Basic example with separate frontend/server crates
-    "examples/basic/shared",
+    # Basic example with co-located frontend/server crates
     "examples/basic/frontend",
     "examples/basic/server",
     # Multi-frontend example with two frontends
-    "examples/multi-frontend/shared",
     "examples/multi-frontend/user-frontend",
     "examples/multi-frontend/admin-frontend",
     "examples/multi-frontend/server",
 ]
 resolver = "2"
 
-# Default members to build (excludes frontend crates which are wasm32-only)
-# Frontend crates are built automatically via artifact dependencies
+# Default members to build (excludes frontend crates which need special handling)
+# Frontend crates are built automatically via artifact dependencies for WASM
+# and imported as libraries for SSR server function registration
 default-members = [
     "axum-egui",
     "axum-egui-build",
-    "axum-egui-macro",
-    "examples/basic/shared",
     "examples/basic/server",
-    "examples/multi-frontend/shared",
     "examples/multi-frontend/server",
 ]
 

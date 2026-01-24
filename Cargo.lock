@@ -223,6 +223,7 @@ dependencies = [
  "send_wrapper",
  "serde",
  "serde_json",
+ "thiserror 2.0.17",
  "tokio",
  "tokio-stream",
  "tower",
@@ -239,13 +240,9 @@ version = "0.2.0"
 name = "axum-egui-macro"
 version = "0.2.0"
 dependencies = [
- "axum",
  "proc-macro2",
  "quote",
- "serde",
- "serde_json",
  "syn",
- "tokio",
 ]
 
 [[package]]
@@ -273,8 +270,8 @@ checksum = "72b3254f16251a8381aa12e40e3c4d2f0199f8c6508fbecb9d91f575e0fbb8c6"
 name = "basic-frontend"
 version = "0.1.0"
 dependencies = [
+ "axum",
  "axum-egui",
- "basic-shared",
  "eframe",
  "egui",
  "futures-util",
@@ -294,7 +291,6 @@ dependencies = [
  "axum-egui",
  "axum-egui-build",
  "basic-frontend",
- "basic-shared",
  "futures-util",
  "rust-embed",
  "serde",
@@ -302,17 +298,6 @@ dependencies = [
  "tokio",
  "tracing",
  "tracing-subscriber",
-]
-
-[[package]]
-name = "basic-shared"
-version = "0.1.0"
-dependencies = [
- "axum",
- "axum-egui",
- "gloo-net",
- "serde",
- "serde_json",
 ]
 
 [[package]]
@@ -1691,7 +1676,6 @@ dependencies = [
  "axum",
  "axum-egui",
  "axum-egui-build",
- "multi-frontend-shared",
  "rust-embed",
  "serde",
  "serde_json",
@@ -1699,13 +1683,6 @@ dependencies = [
  "tracing",
  "tracing-subscriber",
  "user-frontend",
-]
-
-[[package]]
-name = "multi-frontend-shared"
-version = "0.1.0"
-dependencies = [
- "serde",
 ]
 
 [[package]]

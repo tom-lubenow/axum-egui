@@ -3,33 +3,15 @@
 //! - User frontend at `/`
 //! - Admin frontend at `/admin`
 
+use admin_frontend::AdminApp;
 use axum::Router;
 use axum::extract::Request;
 use axum::http::Uri;
 use axum::response::IntoResponse;
 use axum::routing::get;
 use rust_embed::RustEmbed;
-use serde::{Deserialize, Serialize};
 use std::net::SocketAddr;
-
-// ============================================================================
-// App State Types (must match frontend types for JSON serialization)
-// ============================================================================
-
-/// User app state.
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
-pub struct UserApp {
-    pub counter: i32,
-    pub username: Option<String>,
-}
-
-/// Admin app state.
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
-pub struct AdminApp {
-    pub total_users: i32,
-    pub active_sessions: i32,
-    pub server_uptime_secs: u64,
-}
+use user_frontend::UserApp;
 
 // ============================================================================
 // User Frontend Assets (from artifact dependency)
@@ -42,7 +24,7 @@ struct UserAssets;
 async fn user_app() -> axum_egui::App<UserApp, UserAssets> {
     axum_egui::App::new(UserApp {
         counter: 0,
-        username: None,
+        username: Some("demo_user".into()),
     })
 }
 
@@ -62,7 +44,7 @@ async fn admin_app() -> axum_egui::App<AdminApp, AdminAssets> {
     axum_egui::App::new(AdminApp {
         total_users: 42,
         active_sessions: 7,
-        server_uptime_secs: 3600,
+        server_uptime_secs: 86400 + 3661, // 1 day, 1 hour, 1 minute, 1 second
     })
 }
 

@@ -18,6 +18,7 @@ client = ["dep:gloo-net", "dep:wasm-bindgen", "dep:wasm-bindgen-futures", "dep:f
 
 [dependencies]
 axum = { workspace = true, optional = true }
+axum-egui-macro = { path = "../axum-egui-macro" }
 serde = { workspace = true }
 serde_json = { workspace = true }
 rust-embed = { workspace = true, optional = true }
@@ -27,15 +28,13 @@ futures-util = { version = "0.3", features = ["sink"], optional = true }
 futures-channel = { version = "0.3", optional = true }
 bytes = { version = "1", optional = true }
 tokio = { version = "1", features = ["rt", "sync", "macros"], optional = true }
-
-# Macro support
-axum-egui-macro = { version = "0.2.0", path = "../axum-egui-macro" }
+thiserror = "2"
 
 # Client-side dependencies
 gloo-net = { version = "0.6", optional = true }
 wasm-bindgen = { version = "0.2", optional = true }
 wasm-bindgen-futures = { version = "0.4", optional = true }
-web-sys = { version = "0.3", optional = true, features = ["EventSource", "MessageEvent"] }
+web-sys = { version = "0.3", optional = true, features = ["console", "EventSource", "MessageEvent"] }
 js-sys = { version = "0.3", optional = true }
 send_wrapper = { version = "0.6", optional = true }
 

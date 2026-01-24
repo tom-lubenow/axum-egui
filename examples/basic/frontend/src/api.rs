@@ -1,13 +1,19 @@
-//! Server functions using the #[server] macro.
+//! Server functions for the basic example.
 //!
-//! These functions work on both server and client:
-//! - On the server, they execute directly
-//! - On the client (WASM), they make HTTP requests
+//! These functions are defined here in the frontend crate (co-located pattern).
+//! The `#[server]` macro generates feature-gated code:
+//! - On the server (ssr feature): executes directly
+//! - On the client (hydrate feature): makes HTTP requests
 
-#[allow(unused_imports)]
-use axum_egui::ServerFnError;
-use axum_egui::server;
+use axum_egui::{ServerFnError, server};
 use serde::{Deserialize, Serialize};
+
+/// Server info response.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ServerInfo {
+    pub message: String,
+    pub timestamp: u64,
+}
 
 /// Add two numbers together.
 #[server]
@@ -21,23 +27,14 @@ pub async fn greet(name: String) -> Result<String, ServerFnError> {
     Ok(format!("Hello, {}!", name))
 }
 
-/// Server info response.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ServerInfo {
-    pub message: String,
-    pub timestamp: u64,
-}
-
 /// Get information about the server.
 #[server]
 pub async fn whoami() -> Result<ServerInfo, ServerFnError> {
     use std::time::{SystemTime, UNIX_EPOCH};
-
     let timestamp = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .unwrap()
         .as_secs();
-
     Ok(ServerInfo {
         message: "I am axum-egui server".into(),
         timestamp,

@@ -5,18 +5,33 @@ edition = "2024"
 publish = false
 
 [lib]
-crate-type = ["cdylib"]
+crate-type = ["cdylib", "rlib"]  # Both WASM and native
+
+[features]
+default = []
+# Server-side rendering (for type registration if needed)
+ssr = []
+# Client-side hydration (WASM browser)
+hydrate = [
+    "dep:eframe",
+    "dep:egui",
+    "dep:wasm-bindgen",
+    "dep:wasm-bindgen-futures",
+    "dep:web-sys",
+    "dep:log",
+]
 
 [dependencies]
-# egui
-egui = "0.31"
-eframe = { version = "0.31", default-features = false, features = ["wgpu", "web_screen_reader"] }
-
-# WASM
-wasm-bindgen = "=0.2.104"
-wasm-bindgen-futures = "0.4"
-web-sys = { version = "0.3", features = ["Document", "Element", "HtmlElement", "HtmlCanvasElement"] }
-log = "0.4"
-
+# Serialization (for app state)
 serde = { workspace = true }
 serde_json = { workspace = true }
+
+# egui (only for hydrate/wasm)
+eframe = { version = "0.31", default-features = false, features = ["wgpu", "web_screen_reader"], optional = true }
+egui = { version = "0.31", optional = true }
+
+# WASM (only for hydrate)
+wasm-bindgen = { version = "=0.2.104", optional = true }
+wasm-bindgen-futures = { version = "0.4", optional = true }
+web-sys = { version = "0.3", features = ["Document", "Element", "HtmlElement", "HtmlCanvasElement"], optional = true }
+log = { version = "0.4", optional = true }
