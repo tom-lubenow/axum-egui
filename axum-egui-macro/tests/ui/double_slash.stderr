@@ -1,0 +1,7 @@
+error: API path must not contain '//' (double slashes)
+ --> tests/ui/double_slash.rs:5:1
+  |
+5 | #[server("/api//double")]
+  | ^^^^^^^^^^^^^^^^^^^^^^^^^
+  |
+  = note: this error originates in the attribute macro `server` (in Nightly builds, run with -Z macro-backtrace for more info)

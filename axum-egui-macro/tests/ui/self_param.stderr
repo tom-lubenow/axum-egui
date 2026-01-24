@@ -1,0 +1,5 @@
+error: server functions cannot have `self` parameter. The #[server] macro generates a standalone handler function that cannot access struct state. Pass any required data as function arguments instead.
+ --> tests/ui/self_param.rs:9:28
+  |
+9 |     pub async fn with_self(&self) -> Result<(), ServerFnError> {
+  |                            ^^^^^

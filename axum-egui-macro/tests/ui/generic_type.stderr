@@ -1,0 +1,5 @@
+error: server functions do not currently support generic type parameters like `T`. The #[server] macro generates a concrete args struct for serialization, which requires known types at compile time. Consider using a concrete type or an enum to represent different data shapes.
+ --> tests/ui/generic_type.rs:6:25
+  |
+6 | pub async fn generic_fn<T>(value: T) -> Result<T, ServerFnError> {
+  |                         ^

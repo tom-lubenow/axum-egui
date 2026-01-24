@@ -1,0 +1,5 @@
+error: server functions must return `Result<T, ServerFnError>`, found `String`. The #[server] macro generates code that handles both success and error cases, so a Result type is required.
+ --> tests/ui/invalid_return_type.rs:6:30
+  |
+6 | pub async fn bad_return() -> String {
+  |                              ^^^^^^

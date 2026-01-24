@@ -1,0 +1,7 @@
+error: API path must not contain '..' (path traversal is not allowed for security reasons)
+ --> tests/ui/path_traversal.rs:5:1
+  |
+5 | #[server("/api/../../dangerous")]
+  | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  |
+  = note: this error originates in the attribute macro `server` (in Nightly builds, run with -Z macro-backtrace for more info)

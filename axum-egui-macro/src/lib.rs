@@ -6,11 +6,11 @@
 //! selected based on the using crate's features at compile time.
 
 use proc_macro::TokenStream;
-use proc_macro2::TokenStream as TokenStream2;
+use proc_macro2::{Span, TokenStream as TokenStream2};
 use quote::{format_ident, quote};
 use syn::{
-    FnArg, Ident, ItemFn, LitStr, Pat, ReturnType, Type, parse::Parse, parse::ParseStream,
-    parse_macro_input,
+    FnArg, GenericParam, Ident, ItemFn, LitStr, Pat, ReturnType, Type, TypePath,
+    parse::Parse, parse::ParseStream, parse_macro_input,
 };
 
 /// Configuration parsed from `#[server]` or `#[server("/custom/path")]`
@@ -29,6 +29,120 @@ impl Parse for ServerFnArgs {
             path: Some(path.value()),
         })
     }
+}
+
+/// Validate that an API path is safe and well-formed.
+///
+/// This prevents:
+/// - Path traversal attacks (e.g., `/api/../../etc/passwd`)
+/// - Malformed paths (double slashes, missing leading slash)
+/// - Invalid characters that could cause routing issues
+fn validate_api_path(path: &str, span: Span) -> syn::Result<()> {
+    // Must start with /
+    if !path.starts_with('/') {
+        return Err(syn::Error::new(
+            span,
+            "API path must start with '/'",
+        ));
+    }
+
+    // No path traversal
+    if path.contains("..") {
+        return Err(syn::Error::new(
+            span,
+            "API path must not contain '..' (path traversal is not allowed for security reasons)",
+        ));
+    }
+
+    // No double slashes
+    if path.contains("//") {
+        return Err(syn::Error::new(
+            span,
+            "API path must not contain '//' (double slashes)",
+        ));
+    }
+
+    // Valid URL characters only (alphanumeric, /, -, _)
+    for c in path.chars() {
+        if !c.is_ascii_alphanumeric() && !"-_/".contains(c) {
+            return Err(syn::Error::new(
+                span,
+                format!(
+                    "API path contains invalid character '{}'. \
+                    Allowed characters: alphanumeric, '/', '-', '_'",
+                    c
+                ),
+            ));
+        }
+    }
+
+    // Must not end with / (except for root path "/")
+    if path.len() > 1 && path.ends_with('/') {
+        return Err(syn::Error::new(
+            span,
+            "API path must not end with '/' (trailing slash)",
+        ));
+    }
+
+    Ok(())
+}
+
+/// Validate that the return type is `Result<T, ServerFnError>`.
+fn validate_return_type(ret: &ReturnType) -> syn::Result<()> {
+    match ret {
+        ReturnType::Default => {
+            Err(syn::Error::new_spanned(
+                ret,
+                "server functions must return `Result<T, ServerFnError>`. \
+                The #[server] macro generates code that serializes the return value, \
+                so a Result type is required to handle potential errors.",
+            ))
+        }
+        ReturnType::Type(_, ty) => {
+            // Check if it's Result<_, _>
+            if let Type::Path(TypePath { path, .. }) = ty.as_ref() {
+                if let Some(seg) = path.segments.last() {
+                    if seg.ident != "Result" {
+                        return Err(syn::Error::new_spanned(
+                            ty,
+                            format!(
+                                "server functions must return `Result<T, ServerFnError>`, found `{}`. \
+                                The #[server] macro generates code that handles both success and error cases, \
+                                so a Result type is required.",
+                                seg.ident
+                            ),
+                        ));
+                    }
+                    // Could add more detailed validation of generic args here,
+                    // but checking for Result is the main requirement
+                    return Ok(());
+                }
+            }
+            // If we can't parse it as a path, assume it's valid
+            // (could be a type alias, qualified path, etc.)
+            Ok(())
+        }
+    }
+}
+
+/// Check if the function has generic type parameters.
+/// Returns an error explaining that generics aren't fully supported yet.
+fn validate_generics(generics: &syn::Generics) -> syn::Result<()> {
+    for param in &generics.params {
+        if let GenericParam::Type(type_param) = param {
+            return Err(syn::Error::new_spanned(
+                type_param,
+                format!(
+                    "server functions do not currently support generic type parameters like `{}`. \
+                    The #[server] macro generates a concrete args struct for serialization, \
+                    which requires known types at compile time. Consider using a concrete type \
+                    or an enum to represent different data shapes.",
+                    type_param.ident
+                ),
+            ));
+        }
+    }
+    Ok(())
 }
 
 /// The `#[server]` macro for defining server functions.
@@ -75,8 +189,15 @@ fn server_impl(args: ServerFnArgs, input_fn: ItemFn) -> syn::Result<TokenStream2
     let block = &input_fn.block;
     let attrs = &input_fn.attrs;
 
-    // Determine the API path
+    // Validate generics (not supported yet)
+    validate_generics(generics)?;
+
+    // Validate return type
+    validate_return_type(&input_fn.sig.output)?;
+
+    // Determine the API path and validate it
     let api_path = args.path.unwrap_or_else(|| format!("/api/{}", fn_name_str));
+    validate_api_path(&api_path, Span::call_site())?;
 
     // Extract function arguments
     let mut arg_names: Vec<Ident> = Vec::new();
@@ -97,18 +218,23 @@ fn server_impl(args: ServerFnArgs, input_fn: ItemFn) -> syn::Result<TokenStream2
             FnArg::Receiver(_) => {
                 return Err(syn::Error::new_spanned(
                     arg,
-                    "server functions cannot have self parameter",
+                    "server functions cannot have `self` parameter. \
+                    The #[server] macro generates a standalone handler function \
+                    that cannot access struct state. Pass any required data as \
+                    function arguments instead.",
                 ));
             }
         }
     }
 
-    // Extract return type
+    // Extract return type (already validated above)
     let return_type = match &input_fn.sig.output {
         ReturnType::Default => {
+            // This shouldn't happen since validate_return_type checks this,
+            // but we need to handle the match arm
             return Err(syn::Error::new_spanned(
                 &input_fn.sig,
-                "server functions must have a return type",
+                "server functions must return `Result<T, ServerFnError>`",
             ));
         }
         ReturnType::Type(_, ty) => ty.clone(),

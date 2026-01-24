@@ -1,0 +1,7 @@
+error: API path contains invalid character '@'. Allowed characters: alphanumeric, '/', '-', '_'
+ --> tests/ui/invalid_chars.rs:5:1
+  |
+5 | #[server("/api/bad@path")]
+  | ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  |
+  = note: this error originates in the attribute macro `server` (in Nightly builds, run with -Z macro-backtrace for more info)
