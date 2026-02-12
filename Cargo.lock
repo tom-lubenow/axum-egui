@@ -2934,6 +2934,39 @@ dependencies = [
 ]
 
 [[package]]
+name = "todo-frontend"
+version = "0.1.0"
+dependencies = [
+ "axum",
+ "axum-egui",
+ "eframe",
+ "egui",
+ "futures-util",
+ "log",
+ "serde",
+ "serde_json",
+ "wasm-bindgen",
+ "wasm-bindgen-futures",
+ "web-sys",
+]
+
+[[package]]
+name = "todo-server"
+version = "0.1.0"
+dependencies = [
+ "axum",
+ "axum-egui",
+ "axum-egui-build",
+ "rust-embed",
+ "serde",
+ "serde_json",
+ "todo-frontend",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
+]
+
+[[package]]
 name = "tokio"
 version = "1.47.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
