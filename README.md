@@ -21,6 +21,20 @@ cargo run -p basic-server
 # Open http://127.0.0.1:3000
 ```
 
+## Quick Start with Template
+
+The fastest way to create a new axum-egui project is with [cargo-generate](https://cargo-generate.github.io/cargo-generate/):
+
+```bash
+cargo install cargo-generate  # if you don't have it
+cargo generate --git https://github.com/tom-lubenow/axum-egui --path template
+cd my-project
+cargo run
+# Open http://127.0.0.1:3000
+```
+
+The template creates a workspace with a counter app, server functions, and everything wired up and ready to go.
+
 ## Creating a New Project
 
 A typical project has three crates:
