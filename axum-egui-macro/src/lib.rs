@@ -9,8 +9,8 @@ use proc_macro::TokenStream;
 use proc_macro2::{Span, TokenStream as TokenStream2};
 use quote::{format_ident, quote};
 use syn::{
-    FnArg, GenericParam, Ident, ItemFn, LitStr, Pat, ReturnType, Type, TypePath,
-    parse::Parse, parse::ParseStream, parse_macro_input,
+    FnArg, GenericParam, Ident, ItemFn, LitStr, Pat, ReturnType, Type, TypePath, parse::Parse,
+    parse::ParseStream, parse_macro_input,
 };
 
 /// Configuration parsed from `#[server]` or `#[server("/custom/path")]`
@@ -40,10 +40,7 @@ impl Parse for ServerFnArgs {
 fn validate_api_path(path: &str, span: Span) -> syn::Result<()> {
     // Must start with /
     if !path.starts_with('/') {
-        return Err(syn::Error::new(
-            span,
-            "API path must start with '/'",
-        ));
+        return Err(syn::Error::new(span, "API path must start with '/'"));
     }
 
     // No path traversal
@@ -90,14 +87,12 @@ fn validate_api_path(path: &str, span: Span) -> syn::Result<()> {
 /// Validate that the return type is `Result<T, ServerFnError>`.
 fn validate_return_type(ret: &ReturnType) -> syn::Result<()> {
     match ret {
-        ReturnType::Default => {
-            Err(syn::Error::new_spanned(
-                ret,
-                "server functions must return `Result<T, ServerFnError>`. \
+        ReturnType::Default => Err(syn::Error::new_spanned(
+            ret,
+            "server functions must return `Result<T, ServerFnError>`. \
                 The #[server] macro generates code that serializes the return value, \
                 so a Result type is required to handle potential errors.",
-            ))
-        }
+        )),
         ReturnType::Type(_, ty) => {
             // Check if it's Result<_, _>
             if let Type::Path(TypePath { path, .. }) = ty.as_ref() {
