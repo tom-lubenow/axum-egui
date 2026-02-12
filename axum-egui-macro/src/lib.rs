@@ -154,7 +154,8 @@ fn validate_return_type(ret: &ReturnType) -> syn::Result<()> {
     match ret {
         ReturnType::Default => Err(syn::Error::new_spanned(
             ret,
-            "server functions must return `Result<T, ServerFnError>`. \
+            "server functions must return `Result<T, ServerFnError>` or \
+                `Result<T, ServerFnError<E>>`. \
                 The #[server] macro generates code that serializes the return value, \
                 so a Result type is required to handle potential errors.",
         )),
