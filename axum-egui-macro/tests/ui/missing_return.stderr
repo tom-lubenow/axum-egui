@@ -1,4 +1,4 @@
-error: server functions must return `Result<T, ServerFnError>`. The #[server] macro generates code that serializes the return value, so a Result type is required to handle potential errors.
+error: server functions must return `Result<T, ServerFnError>` or `Result<T, ServerFnError<E>>`. The #[server] macro generates code that serializes the return value, so a Result type is required to handle potential errors.
  --> tests/ui/missing_return.rs:5:1
   |
 5 | #[server]
