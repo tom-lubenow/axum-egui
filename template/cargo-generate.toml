@@ -1,0 +1,7 @@
+[template]
+cargo_generate_version = ">=0.18.0"
+
+[placeholders.project-name]
+type = "string"
+prompt = "Project name?"
+regex = "^[a-z][a-z0-9-]*$"
