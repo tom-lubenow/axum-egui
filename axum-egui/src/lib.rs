@@ -66,7 +66,7 @@ pub use axum_egui_macro::server;
 mod app {
     use axum::{
         body::Body,
-        http::{StatusCode, Uri, header},
+        http::{HeaderMap, StatusCode, Uri, header},
         response::{Html, IntoResponse, Response},
     };
     use rust_embed::RustEmbed;
@@ -127,17 +127,91 @@ mod app {
         }
     }
 
+    /// Check if the `Accept-Encoding` header includes the given encoding.
+    fn accepts_encoding(headers: &HeaderMap, encoding: &str) -> bool {
+        headers
+            .get(header::ACCEPT_ENCODING)
+            .and_then(|v| v.to_str().ok())
+            .is_some_and(|v| v.split(',').any(|part| part.trim().starts_with(encoding)))
+    }
+
+    /// Check if a filename contains a content hash (e.g., `app.abc12345.js`).
+    ///
+    /// A hashed filename has the form `stem.XXXXXXXX.ext` where the hash part
+    /// is exactly 8 hex characters.
+    fn has_content_hash(filename: &str) -> bool {
+        let parts: Vec<&str> = filename.splitn(3, '.').collect();
+        if parts.len() == 3 {
+            let hash_part = parts[1];
+            hash_part.len() == 8 && hash_part.chars().all(|c| c.is_ascii_hexdigit())
+        } else {
+            false
+        }
+    }
+
     /// Handler for serving static assets from an embedded `RustEmbed` type.
-    pub async fn static_handler<A: RustEmbed>(uri: Uri) -> impl IntoResponse {
+    ///
+    /// This handler supports:
+    /// - **Pre-compressed assets**: Serves `.br` (brotli) or `.gz` (gzip) versions
+    ///   when the client indicates support via `Accept-Encoding`.
+    /// - **Cache busting**: Files with content hashes in their name (e.g., `app.abc123.js`)
+    ///   are served with long-lived immutable cache headers. Non-hashed files like
+    ///   `index.html` get `Cache-Control: no-cache`.
+    ///
+    /// Compatible with axum's extractor system:
+    /// ```ignore
+    /// let app = Router::new()
+    ///     .fallback(axum_egui::static_handler::<Assets>);
+    /// ```
+    pub async fn static_handler<A: RustEmbed>(headers: HeaderMap, uri: Uri) -> impl IntoResponse {
         let path = uri.path().trim_start_matches('/');
 
         match A::get(path) {
             Some(content) => {
                 let mime = mime_guess::from_path(path).first_or_octet_stream();
+                let filename = path.rsplit('/').next().unwrap_or(path);
 
+                // Determine cache control based on whether filename has a content hash
+                let cache_control = if has_content_hash(filename) {
+                    "public, max-age=31536000, immutable"
+                } else {
+                    "no-cache"
+                };
+
+                // Try to serve a pre-compressed version
+                if accepts_encoding(&headers, "br") {
+                    let br_path = format!("{}.br", path);
+                    if let Some(br_content) = A::get(&br_path) {
+                        return Response::builder()
+                            .status(StatusCode::OK)
+                            .header(header::CONTENT_TYPE, mime.as_ref())
+                            .header(header::CONTENT_ENCODING, "br")
+                            .header(header::CACHE_CONTROL, cache_control)
+                            .header(header::VARY, "Accept-Encoding")
+                            .body(Body::from(br_content.data.to_vec()))
+                            .unwrap();
+                    }
+                }
+
+                if accepts_encoding(&headers, "gzip") {
+                    let gz_path = format!("{}.gz", path);
+                    if let Some(gz_content) = A::get(&gz_path) {
+                        return Response::builder()
+                            .status(StatusCode::OK)
+                            .header(header::CONTENT_TYPE, mime.as_ref())
+                            .header(header::CONTENT_ENCODING, "gzip")
+                            .header(header::CACHE_CONTROL, cache_control)
+                            .header(header::VARY, "Accept-Encoding")
+                            .body(Body::from(gz_content.data.to_vec()))
+                            .unwrap();
+                    }
+                }
+
+                // Serve uncompressed original
                 Response::builder()
                     .status(StatusCode::OK)
                     .header(header::CONTENT_TYPE, mime.as_ref())
+                    .header(header::CACHE_CONTROL, cache_control)
                     .body(Body::from(content.data.to_vec()))
                     .unwrap()
             }
@@ -145,6 +219,7 @@ mod app {
                 Some(content) => Response::builder()
                     .status(StatusCode::OK)
                     .header(header::CONTENT_TYPE, "text/html")
+                    .header(header::CACHE_CONTROL, "no-cache")
                     .body(Body::from(content.data.to_vec()))
                     .unwrap(),
                 None => Response::builder()
@@ -216,7 +291,7 @@ pub mod prelude {
 #[cfg(all(test, feature = "server"))]
 mod tests {
     use super::*;
-    use axum::http::{StatusCode, Uri};
+    use axum::http::{HeaderMap, HeaderValue, StatusCode, Uri, header};
     use axum::response::IntoResponse;
     use http_body_util::BodyExt;
     use rust_embed::RustEmbed;
@@ -237,6 +312,25 @@ mod tests {
         let body = response.into_body();
         let bytes = body.collect().await.unwrap().to_bytes();
         String::from_utf8(bytes.to_vec()).unwrap()
+    }
+
+    async fn body_to_bytes(response: axum::response::Response) -> Vec<u8> {
+        let body = response.into_body();
+        let bytes = body.collect().await.unwrap().to_bytes();
+        bytes.to_vec()
+    }
+
+    fn empty_headers() -> HeaderMap {
+        HeaderMap::new()
+    }
+
+    fn headers_with_encoding(encoding: &str) -> HeaderMap {
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            header::ACCEPT_ENCODING,
+            HeaderValue::from_str(encoding).unwrap(),
+        );
+        headers
     }
 
     #[tokio::test]
@@ -280,7 +374,9 @@ mod tests {
     #[tokio::test]
     async fn static_handler_serves_js_with_correct_mime() {
         let uri: Uri = "/app.js".parse().unwrap();
-        let response = static_handler::<TestAssets>(uri).await.into_response();
+        let response = static_handler::<TestAssets>(empty_headers(), uri)
+            .await
+            .into_response();
 
         assert_eq!(response.status(), StatusCode::OK);
         assert_eq!(
@@ -292,7 +388,9 @@ mod tests {
     #[tokio::test]
     async fn static_handler_serves_wasm_with_correct_mime() {
         let uri: Uri = "/app.wasm".parse().unwrap();
-        let response = static_handler::<TestAssets>(uri).await.into_response();
+        let response = static_handler::<TestAssets>(empty_headers(), uri)
+            .await
+            .into_response();
 
         assert_eq!(response.status(), StatusCode::OK);
         assert_eq!(
@@ -305,7 +403,9 @@ mod tests {
     async fn static_handler_falls_back_to_index_html() {
         // Unknown path should return index.html for SPA routing
         let uri: Uri = "/some/unknown/path".parse().unwrap();
-        let response = static_handler::<TestAssets>(uri).await.into_response();
+        let response = static_handler::<TestAssets>(empty_headers(), uri)
+            .await
+            .into_response();
 
         assert_eq!(response.status(), StatusCode::OK);
         assert_eq!(response.headers().get("content-type").unwrap(), "text/html");
@@ -322,7 +422,7 @@ mod tests {
     #[tokio::test]
     async fn static_handler_returns_404_when_no_index() {
         let uri: Uri = "/unknown".parse().unwrap();
-        let response = static_handler::<TestAssetsNoIndex>(uri)
+        let response = static_handler::<TestAssetsNoIndex>(empty_headers(), uri)
             .await
             .into_response();
 
@@ -339,5 +439,157 @@ mod tests {
         let response = app.into_response();
 
         assert_eq!(response.status(), StatusCode::INTERNAL_SERVER_ERROR);
+    }
+
+    // ========================================================================
+    // Compression serving tests
+    // ========================================================================
+
+    #[tokio::test]
+    async fn static_handler_serves_brotli_when_accepted() {
+        let uri: Uri = "/app.js".parse().unwrap();
+        let headers = headers_with_encoding("br, gzip, deflate");
+        let response = static_handler::<TestAssets>(headers, uri)
+            .await
+            .into_response();
+
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(
+            response.headers().get("content-type").unwrap(),
+            "text/javascript"
+        );
+        assert_eq!(response.headers().get("content-encoding").unwrap(), "br");
+        assert_eq!(response.headers().get("vary").unwrap(), "Accept-Encoding");
+
+        // Body should be the brotli-compressed data, not the original
+        let body = body_to_bytes(response).await;
+        assert_ne!(body, b"// Test JavaScript file\nconsole.log(\"test\");");
+    }
+
+    #[tokio::test]
+    async fn static_handler_serves_gzip_when_brotli_not_accepted() {
+        let uri: Uri = "/app.js".parse().unwrap();
+        let headers = headers_with_encoding("gzip, deflate");
+        let response = static_handler::<TestAssets>(headers, uri)
+            .await
+            .into_response();
+
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(
+            response.headers().get("content-type").unwrap(),
+            "text/javascript"
+        );
+        assert_eq!(response.headers().get("content-encoding").unwrap(), "gzip");
+
+        // Body should start with gzip magic bytes
+        let body = body_to_bytes(response).await;
+        assert!(body.len() >= 2);
+        assert_eq!(body[0], 0x1f);
+        assert_eq!(body[1], 0x8b);
+    }
+
+    #[tokio::test]
+    async fn static_handler_serves_uncompressed_when_no_encoding_accepted() {
+        let uri: Uri = "/app.js".parse().unwrap();
+        let response = static_handler::<TestAssets>(empty_headers(), uri)
+            .await
+            .into_response();
+
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(
+            response.headers().get("content-type").unwrap(),
+            "text/javascript"
+        );
+        assert!(response.headers().get("content-encoding").is_none());
+
+        let body = body_to_string(response).await;
+        assert_eq!(body, "// Test JavaScript file\nconsole.log(\"test\");\n");
+    }
+
+    #[tokio::test]
+    async fn static_handler_serves_compressed_wasm() {
+        let uri: Uri = "/app.wasm".parse().unwrap();
+        let headers = headers_with_encoding("br");
+        let response = static_handler::<TestAssets>(headers, uri)
+            .await
+            .into_response();
+
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(
+            response.headers().get("content-type").unwrap(),
+            "application/wasm"
+        );
+        assert_eq!(response.headers().get("content-encoding").unwrap(), "br");
+    }
+
+    // ========================================================================
+    // Cache control tests
+    // ========================================================================
+
+    #[tokio::test]
+    async fn static_handler_cache_control_no_cache_for_index_html() {
+        // Direct request to index.html
+        let uri: Uri = "/index.html".parse().unwrap();
+        let response = static_handler::<TestAssets>(empty_headers(), uri)
+            .await
+            .into_response();
+
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(response.headers().get("cache-control").unwrap(), "no-cache");
+    }
+
+    #[tokio::test]
+    async fn static_handler_cache_control_no_cache_for_fallback() {
+        // Fallback to index.html for unknown path
+        let uri: Uri = "/unknown/path".parse().unwrap();
+        let response = static_handler::<TestAssets>(empty_headers(), uri)
+            .await
+            .into_response();
+
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(response.headers().get("cache-control").unwrap(), "no-cache");
+    }
+
+    #[tokio::test]
+    async fn static_handler_cache_control_immutable_for_hashed_files() {
+        // Request a content-hashed file
+        let uri: Uri = "/app.e55aa7a8.js".parse().unwrap();
+        let response = static_handler::<TestAssets>(empty_headers(), uri)
+            .await
+            .into_response();
+
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(
+            response.headers().get("cache-control").unwrap(),
+            "public, max-age=31536000, immutable"
+        );
+    }
+
+    #[tokio::test]
+    async fn static_handler_cache_control_no_cache_for_unhashed_files() {
+        // Regular file without content hash
+        let uri: Uri = "/app.js".parse().unwrap();
+        let response = static_handler::<TestAssets>(empty_headers(), uri)
+            .await
+            .into_response();
+
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(response.headers().get("cache-control").unwrap(), "no-cache");
+    }
+
+    #[tokio::test]
+    async fn static_handler_compressed_hashed_file_has_immutable_cache() {
+        let uri: Uri = "/app.e55aa7a8.js".parse().unwrap();
+        let headers = headers_with_encoding("br");
+        let response = static_handler::<TestAssets>(headers, uri)
+            .await
+            .into_response();
+
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(response.headers().get("content-encoding").unwrap(), "br");
+        assert_eq!(
+            response.headers().get("cache-control").unwrap(),
+            "public, max-age=31536000, immutable"
+        );
     }
 }

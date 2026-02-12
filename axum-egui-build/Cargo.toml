@@ -9,5 +9,7 @@ keywords = ["egui", "axum", "wasm", "build", "wasm-bindgen"]
 categories = ["development-tools::build-utils", "wasm"]
 rust-version = "1.85"
 
-# Zero runtime dependencies - just std
 [dependencies]
+flate2 = "1"
+brotli = "7"
+sha2 = "0.10"
