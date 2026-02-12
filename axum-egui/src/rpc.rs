@@ -319,6 +319,7 @@ pub mod server {
     /// // In router:
     /// // .route("/api/add", post(json_handler(add_impl)))
     /// ```
+    #[allow(clippy::type_complexity)]
     pub fn json_handler<Args, Resp, E, F, Fut>(
         f: F,
     ) -> impl Fn(
