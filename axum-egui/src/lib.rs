@@ -11,6 +11,7 @@
 //! - WebSockets for bidirectional real-time communication
 //! - Reactive shared state synchronization (`SharedState` / `StateSync`)
 //! - Simple RPC helpers for client-server communication
+//! - Typed error boundaries via [`ServerFnError<E>`](rpc::ServerFnError)
 //!
 //! # Server Example
 //!
@@ -181,18 +182,21 @@ pub mod ws;
 pub mod sync;
 
 // Re-export commonly used items at the crate root
-pub use rpc::ServerFnError;
+pub use rpc::{DefaultError, ServerFnError};
+
+#[cfg(feature = "server")]
+pub use rpc::ErrorStatusCode;
 
 /// Prelude module for convenient imports.
 pub mod prelude {
-    pub use crate::rpc::ServerFnError;
+    pub use crate::rpc::{DefaultError, ServerFnError};
     pub use crate::server;
 
     #[cfg(feature = "server")]
     pub use crate::{App, static_handler};
 
     #[cfg(feature = "server")]
-    pub use crate::rpc::{ApiResponse, IntoApiResponse, json_handler};
+    pub use crate::rpc::{ApiResponse, ErrorStatusCode, IntoApiResponse, json_handler};
 
     #[cfg(feature = "server")]
     pub use crate::sse::{Event, KeepAlive, Sse, SseExt};
