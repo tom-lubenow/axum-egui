@@ -9,6 +9,7 @@
 //! - Static file serving utilities for embedded assets
 //! - Server-Sent Events (SSE) for real-time server-to-client updates
 //! - WebSockets for bidirectional real-time communication
+//! - Reactive shared state synchronization (`SharedState` / `StateSync`)
 //! - Simple RPC helpers for client-server communication
 //!
 //! # Server Example
@@ -172,6 +173,13 @@ pub mod sse;
 #[cfg(any(feature = "server", feature = "client"))]
 pub mod ws;
 
+// ============================================================================
+// Reactive shared state synchronization
+// ============================================================================
+
+#[cfg(any(feature = "server", feature = "client"))]
+pub mod sync;
+
 // Re-export commonly used items at the crate root
 pub use rpc::ServerFnError;
 
@@ -192,11 +200,17 @@ pub mod prelude {
     #[cfg(feature = "server")]
     pub use crate::ws::{JsonWebSocket, Message, WebSocket, WebSocketUpgrade, WebSocketUpgradeExt};
 
+    #[cfg(feature = "server")]
+    pub use crate::sync::{SharedState, SharedStateReceiver};
+
     #[cfg(feature = "client")]
     pub use crate::rpc::call;
 
     #[cfg(feature = "client")]
     pub use crate::ws::{WsClientReceiver, WsClientSender, WsError, WsStream};
+
+    #[cfg(feature = "client")]
+    pub use crate::sync::{StateSync, SyncError, SyncReceiver};
 }
 
 #[cfg(all(test, feature = "server"))]
