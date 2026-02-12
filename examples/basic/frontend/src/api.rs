@@ -40,3 +40,22 @@ pub async fn whoami() -> Result<ServerInfo, ServerFnError> {
         timestamp,
     })
 }
+
+/// Demonstrates axum extractor access in server functions.
+///
+/// The `#[extract]` attribute marks parameters that are injected by axum on the
+/// server side. These parameters are omitted from the client-side function
+/// signature and the serialized args struct.
+///
+/// Here `app_name` is an axum `State<String>` extractor -- on the server, axum
+/// injects the shared state. On the client, the function only takes `user_name`.
+#[cfg(feature = "ssr")]
+use axum::extract::State;
+
+#[server]
+pub async fn greet_with_app(
+    #[extract] State(app_name): State<String>,
+    user_name: String,
+) -> Result<String, ServerFnError> {
+    Ok(format!("Hello {} from {}!", user_name, app_name))
+}

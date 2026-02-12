@@ -1,0 +1,5 @@
+error: unknown server function attribute `foobar`. Expected `stream`, `endpoint = "..."`, or `middleware = "..."`
+ --> tests/ui/unknown_attr.rs:5:10
+  |
+5 | #[server(foobar)]
+  |          ^^^^^^
