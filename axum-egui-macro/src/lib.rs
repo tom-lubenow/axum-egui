@@ -95,23 +95,23 @@ fn validate_return_type(ret: &ReturnType) -> syn::Result<()> {
         )),
         ReturnType::Type(_, ty) => {
             // Check if it's Result<_, _>
-            if let Type::Path(TypePath { path, .. }) = ty.as_ref() {
-                if let Some(seg) = path.segments.last() {
-                    if seg.ident != "Result" {
-                        return Err(syn::Error::new_spanned(
-                            ty,
-                            format!(
-                                "server functions must return `Result<T, ServerFnError>`, found `{}`. \
-                                The #[server] macro generates code that handles both success and error cases, \
-                                so a Result type is required.",
-                                seg.ident
-                            ),
-                        ));
-                    }
+            if let Type::Path(TypePath { path, .. }) = ty.as_ref()
+                && let Some(seg) = path.segments.last()
+            {
+                if seg.ident == "Result" {
                     // Could add more detailed validation of generic args here,
                     // but checking for Result is the main requirement
                     return Ok(());
                 }
+                return Err(syn::Error::new_spanned(
+                    ty,
+                    format!(
+                        "server functions must return `Result<T, ServerFnError>`, found `{}`. \
+                        The #[server] macro generates code that handles both success and error cases, \
+                        so a Result type is required.",
+                        seg.ident
+                    ),
+                ));
             }
             // If we can't parse it as a path, assume it's valid
             // (could be a type alias, qualified path, etc.)
