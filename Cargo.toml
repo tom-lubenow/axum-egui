@@ -10,6 +10,9 @@ members = [
     "examples/multi-frontend/user-frontend",
     "examples/multi-frontend/admin-frontend",
     "examples/multi-frontend/server",
+    # Todo app example with auth and CRUD
+    "examples/todo-app/frontend",
+    "examples/todo-app/server",
 ]
 resolver = "2"
 
@@ -21,6 +24,7 @@ default-members = [
     "axum-egui-build",
     "examples/basic/server",
     "examples/multi-frontend/server",
+    "examples/todo-app/server",
 ]
 
 # With artifact dependencies (RFC 3028), we can have frontend crates in the workspace.
