@@ -10,6 +10,7 @@ Seamlessly embed egui frontends in axum backends with a single deployable binary
 - **Multiple frontends** - Serve different UIs from the same server
 - **Server-Sent Events** - Real-time streaming from server to client
 - **Type-safe RPC** - `#[server]` macro for functions that work on both server and client
+- **Hot-reload dev mode** - Auto-refresh browser on frontend changes (with `dev` feature)
 
 ## Quick Start
 
@@ -288,6 +289,170 @@ cargo run -p my-server
 ```
 
 That's it! The frontend WASM is built automatically.
+
+## Hot-Reload Development Mode
+
+For a faster development cycle, the `dev` feature enables hot-reload: the browser
+automatically refreshes when frontend assets change on disk.
+
+Instead of the full production pipeline (compile WASM -> wasm-bindgen -> embed in
+server -> recompile server), you rebuild only the WASM frontend and the dev server
+picks up changes immediately from the filesystem.
+
+### How It Works
+
+1. **`DevServer`** watches a directory for file changes using the `notify` crate
+2. When changes are detected, it sends a "reload" message over a WebSocket
+3. **`DevApp`** injects a small JavaScript client into the HTML that connects to the WebSocket
+4. The browser receives the reload message and refreshes the page
+5. **`dev_static_handler`** serves assets from disk instead of embedded assets
+
+Changes are debounced (200ms) so that multi-file writes (e.g., wasm-bindgen emitting
+both `.wasm` and `.js`) trigger a single reload. The JavaScript client uses exponential
+backoff reconnection in case the dev server restarts.
+
+### Setup
+
+Add the `dev` feature to your server's dependency on axum-egui:
+
+```toml
+[dependencies]
+axum-egui = { version = "0.2", features = ["server", "dev"] }
+```
+
+Then use the dev-mode types in your server. There are three levels of API, from
+highest-level to most flexible:
+
+#### Option 1: `dev_app_router` (highest-level)
+
+Sets up everything in one call -- file watching, WebSocket endpoint, index route
+with state injection, and static file fallback:
+
+```rust
+use axum::{Router, routing::post};
+use axum_egui::dev::dev_app_router;
+
+#[tokio::main]
+async fn main() {
+    let app = Router::new()
+        .route("/api/increment", post(increment_handler))
+        .merge(dev_app_router("./target/dev-dist", AppState { counter: 42 }));
+
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:3000").await.unwrap();
+    axum::serve(listener, app).await.unwrap();
+}
+```
+
+#### Option 2: `dev_router` (mid-level)
+
+Sets up file watching, WebSocket endpoint, and static file fallback, but you provide
+your own index route (using `DevApp` for state + hot-reload injection):
+
+```rust
+use axum::{Router, routing::get};
+use axum_egui::dev::{DevApp, dev_router};
+
+async fn index() -> DevApp<AppState> {
+    DevApp::new(AppState { counter: 42 }, "./target/dev-dist")
+}
+
+#[tokio::main]
+async fn main() {
+    let app = Router::new()
+        .route("/", get(index))
+        .merge(dev_router("./target/dev-dist"));
+
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:3000").await.unwrap();
+    axum::serve(listener, app).await.unwrap();
+}
+```
+
+#### Option 3: `DevServer` (lowest-level)
+
+Full control over the dev server setup:
+
+```rust
+use axum::{Router, routing::get};
+use axum_egui::dev::{DevServer, DevApp, dev_static_handler};
+
+#[tokio::main]
+async fn main() {
+    let dist_dir = "./target/dev-dist";
+
+    let dev = DevServer::new(dist_dir);
+    dev.start_watching().expect("Failed to start file watcher");
+
+    let dir = dev.watch_dir().to_path_buf();
+    let app = Router::new()
+        .route("/", get(|| async {
+            DevApp::new(AppState { counter: 42 }, "./target/dev-dist")
+        }))
+        .merge(dev.routes())
+        .fallback(move |uri| dev_static_handler(dir.clone(), uri));
+
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:3000").await.unwrap();
+    axum::serve(listener, app).await.unwrap();
+}
+```
+
+### Development Workflow
+
+Run two terminals:
+
+```bash
+# Terminal 1: Watch frontend source and rebuild WASM on changes
+cargo watch -w frontend/src -s \
+  "cargo build -p my-frontend --target wasm32-unknown-unknown && \
+   wasm-bindgen target/wasm32-unknown-unknown/debug/my_frontend.wasm \
+     --out-dir ./target/dev-dist --target web --no-typescript"
+
+# Terminal 2: Run the dev server
+cargo run -p my-server --features dev
+```
+
+Or use a Makefile:
+
+```makefile
+.PHONY: dev dev-server dev-frontend
+
+dev:
+	$(MAKE) -j2 dev-server dev-frontend
+
+dev-frontend:
+	cargo watch -w frontend/src -s \
+	  "cargo build -p my-frontend --target wasm32-unknown-unknown && \
+	   wasm-bindgen target/wasm32-unknown-unknown/debug/my_frontend.wasm \
+	     --out-dir ./target/dev-dist --target web --no-typescript"
+
+dev-server:
+	cargo run -p my-server --features dev
+```
+
+### Conditional Compilation
+
+You can use `cfg` to switch between production (embedded) and dev (filesystem) modes:
+
+```rust
+#[cfg(not(feature = "dev"))]
+async fn index() -> axum_egui::App<AppState, Assets> {
+    axum_egui::App::new(AppState { counter: 42 })
+}
+
+#[cfg(feature = "dev")]
+async fn index() -> axum_egui::dev::DevApp<AppState> {
+    axum_egui::dev::DevApp::new(AppState { counter: 42 }, "./target/dev-dist")
+}
+```
+
+### Limitations and Known Issues
+
+- **Experimental**: This is a new feature. Please report issues.
+- **Full page reload**: Unlike Dioxus-style partial hot-reload, this does a full browser
+  reload. egui state is lost on each reload.
+- **Two-terminal workflow**: You need separate terminals for the frontend watcher and
+  the dev server. A unified CLI tool may be added in the future.
+- **Frontend must be built once first**: The dev server reads from the dist directory,
+  which must exist before the server starts.
 
 ## Multiple Frontends
 

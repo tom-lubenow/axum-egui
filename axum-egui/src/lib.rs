@@ -12,6 +12,7 @@
 //! - Reactive shared state synchronization (`SharedState` / `StateSync`)
 //! - Simple RPC helpers for client-server communication
 //! - Typed error boundaries via [`ServerFnError<E>`](rpc::ServerFnError)
+//! - **Hot-reload dev mode** (with `dev` feature) for rapid iteration
 //!
 //! # Server Example
 //!
@@ -256,6 +257,13 @@ pub mod ws;
 #[cfg(any(feature = "server", feature = "client"))]
 pub mod sync;
 
+// ============================================================================
+// Hot-reload development support
+// ============================================================================
+
+#[cfg(feature = "dev")]
+pub mod dev;
+
 // Re-export commonly used items at the crate root
 pub use rpc::{DefaultError, ServerFnError};
 
@@ -290,6 +298,9 @@ pub mod prelude {
 
     #[cfg(feature = "client")]
     pub use crate::sync::{StateSync, SyncError, SyncReceiver};
+
+    #[cfg(feature = "dev")]
+    pub use crate::dev::{DevApp, DevServer, dev_app_router, dev_router, dev_static_handler};
 }
 
 #[cfg(all(test, feature = "server"))]
