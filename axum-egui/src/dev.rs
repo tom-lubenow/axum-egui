@@ -148,7 +148,7 @@ impl DevServer {
         // Keep the watcher alive for the lifetime of the process.
         // In a dev server context this is acceptable - the watcher should live
         // as long as the server is running.
-        std::mem::forget(watcher);
+        Box::leak(Box::new(watcher));
         Ok(())
     }
 

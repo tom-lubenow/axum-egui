@@ -6,7 +6,7 @@
 use admin_frontend::AdminApp;
 use axum::Router;
 use axum::extract::Request;
-use axum::http::Uri;
+use axum::http::{HeaderMap, Uri};
 use axum::response::IntoResponse;
 use axum::routing::get;
 use rust_embed::RustEmbed;
@@ -28,8 +28,8 @@ async fn user_app() -> axum_egui::App<UserApp, UserAssets> {
     })
 }
 
-async fn user_static(uri: Uri) -> impl IntoResponse {
-    axum_egui::static_handler::<UserAssets>(uri).await
+async fn user_static(headers: HeaderMap, uri: Uri) -> impl IntoResponse {
+    axum_egui::static_handler::<UserAssets>(headers, uri).await
 }
 
 // ============================================================================
@@ -53,7 +53,8 @@ async fn admin_static(request: Request) -> impl IntoResponse {
     let path = request.uri().path();
     let stripped = path.strip_prefix("/admin").unwrap_or(path);
     let new_uri: Uri = stripped.parse().unwrap_or_else(|_| "/".parse().unwrap());
-    axum_egui::static_handler::<AdminAssets>(new_uri).await
+    let headers = request.headers().clone();
+    axum_egui::static_handler::<AdminAssets>(headers, new_uri).await
 }
 
 // ============================================================================

@@ -590,7 +590,7 @@ fn generate_regular(
                 ).into_response(),
                 Err(e) => (
                     ::axum::http::StatusCode::INTERNAL_SERVER_ERROR,
-                    ::axum::extract::Json(::serde_json::json!({ "error": e.to_string() })),
+                    ::axum::extract::Json(e),
                 ).into_response(),
             }
         }
@@ -668,7 +668,8 @@ fn generate_streaming(
                 .map_err(|e| ::axum_egui::rpc::ServerFnError::Serialization(e.to_string()))?;
             let __query_string = if let ::serde_json::Value::Object(map) = &__query {
                 let pairs: ::std::vec::Vec<String> = map.iter().map(|(k, v)| {
-                    format!("{}={}", k, v)
+                    let val = ::axum_egui::rpc::query_value_to_string(v);
+                    format!("{}={}", ::axum_egui::rpc::url_encode(k), ::axum_egui::rpc::url_encode(&val))
                 }).collect();
                 if pairs.is_empty() {
                     ::std::string::String::new()
@@ -722,7 +723,7 @@ fn generate_streaming(
                 }
                 Err(e) => (
                     ::axum::http::StatusCode::INTERNAL_SERVER_ERROR,
-                    ::axum::extract::Json(::serde_json::json!({ "error": e.to_string() })),
+                    ::axum::extract::Json(e),
                 ).into_response(),
             }
         }

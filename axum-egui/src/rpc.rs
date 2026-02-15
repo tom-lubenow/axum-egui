@@ -237,6 +237,39 @@ where
         .map_err(|e| ServerFnError::Deserialization(e.to_string()))
 }
 
+/// URL-encode a string for use in query parameters.
+#[cfg(feature = "client")]
+pub fn url_encode(s: &str) -> String {
+    let mut result = String::new();
+    for b in s.bytes() {
+        match b {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
+                result.push(b as char);
+            }
+            b' ' => result.push('+'),
+            _ => {
+                result.push('%');
+                result.push(char::from(b"0123456789ABCDEF"[(b >> 4) as usize]));
+                result.push(char::from(b"0123456789ABCDEF"[(b & 0x0f) as usize]));
+            }
+        }
+    }
+    result
+}
+
+/// Convert a `serde_json::Value` to a plain string suitable for URL query parameters.
+///
+/// For strings, returns the inner string (without JSON quotes).
+/// For other types, returns the JSON representation.
+#[cfg(feature = "client")]
+pub fn query_value_to_string(v: &serde_json::Value) -> String {
+    match v {
+        serde_json::Value::String(s) => s.clone(),
+        serde_json::Value::Null => String::new(),
+        other => other.to_string(),
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Server-side helpers
 // ---------------------------------------------------------------------------
